@@ -21,11 +21,17 @@ interface EpisodeDao {
     """)
     fun getUnplayedEpisodesForFeed(feedId: Long, limit: Int = 50): Flow<List<EpisodeEntity>>
 
+    @Query("SELECT * FROM episodes ORDER BY pubDate DESC")
+    fun getAllEpisodes(): Flow<List<EpisodeEntity>>
+
     @Query("SELECT * FROM episodes WHERE id = :episodeId")
     suspend fun getEpisodeById(episodeId: Long): EpisodeEntity?
 
     @Query("SELECT * FROM episodes WHERE guid = :guid AND feedId = :feedId LIMIT 1")
     suspend fun getEpisodeByGuid(guid: String, feedId: Long): EpisodeEntity?
+
+    @Query("SELECT * FROM episodes WHERE url = :url AND feedId = :feedId LIMIT 1")
+    suspend fun getEpisodeByUrl(url: String, feedId: Long): EpisodeEntity?
 
     @Upsert
     suspend fun upsertEpisode(episode: EpisodeEntity): Long
@@ -35,6 +41,21 @@ interface EpisodeDao {
 
     @Query("UPDATE episodes SET playPosition = :position WHERE id = :episodeId")
     suspend fun updatePlayPosition(episodeId: Long, position: Long)
+
+    @Query("UPDATE episodes SET playPosition = :position, playedFraction = :fraction WHERE id = :episodeId")
+    suspend fun updatePlayPositionAndFraction(episodeId: Long, position: Long, fraction: Float)
+
+    @Query("UPDATE episodes SET isStarred = :starred WHERE id = :episodeId")
+    suspend fun updateIsStarred(episodeId: Long, starred: Boolean)
+
+    @Query("UPDATE episodes SET isProtected = :protected WHERE id = :episodeId")
+    suspend fun updateIsProtected(episodeId: Long, protected: Boolean)
+
+    @Query("UPDATE episodes SET isInMyEpisodes = :inMyEpisodes, addedToMyEpisodes = :addedAt WHERE id = :episodeId")
+    suspend fun updateIsInMyEpisodes(episodeId: Long, inMyEpisodes: Boolean, addedAt: Long?)
+
+    @Query("UPDATE episodes SET isInMyEpisodes = 0, addedToMyEpisodes = NULL WHERE isInMyEpisodes = 1")
+    suspend fun clearAllMyEpisodesFlags()
 
     // NOTE: No updateQueueState() or isInQueue/queuePosition operations here.
     // All queue read/write goes through QueueSnapshotDao. (QA finding #1.)
@@ -79,6 +100,15 @@ interface EpisodeDao {
     """)
     fun getNewEpisodesForCategory(categoryId: Long, limit: Int = 100): Flow<List<EpisodeEntity>>
 
+    // Full-text search across title and description
+    @Query("""
+        SELECT * FROM episodes
+        WHERE title LIKE '%' || :query || '%'
+        OR description LIKE '%' || :query || '%'
+        ORDER BY pubDate DESC
+    """)
+    fun searchEpisodes(query: String): Flow<List<EpisodeEntity>>
+
     @Query("DELETE FROM episodes WHERE feedId = :feedId AND playState = 'PLAYED' AND localFilePath IS NULL")
     suspend fun deletePlayedNonDownloadedEpisodes(feedId: Long)
 
@@ -92,6 +122,34 @@ interface EpisodeDao {
         )
     """)
     suspend fun trimOldDownloads(feedId: Long, keepCount: Int)
+
+    // Returns played downloaded non-protected episodes eligible for cleanup, oldest first.
+    // isProtected = 0 is enforced here; the caller must NOT delete protected episodes.
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId
+        AND downloadState = 'DOWNLOADED'
+        AND isProtected = 0
+        AND playState = 'PLAYED'
+        ORDER BY pubDate ASC
+    """)
+    suspend fun getPlayedDownloadedForCleanup(feedId: Long): List<EpisodeEntity>
+
+    // Episodes available for auto-download (not yet downloaded), newest first
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId AND downloadState = 'NOT_DOWNLOADED'
+        ORDER BY pubDate DESC LIMIT :count
+    """)
+    suspend fun getNotDownloadedNewest(feedId: Long, count: Int): List<EpisodeEntity>
+
+    // Episodes available for auto-download in serial order, oldest first
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId AND downloadState = 'NOT_DOWNLOADED'
+        ORDER BY pubDate ASC LIMIT :count
+    """)
+    suspend fun getNotDownloadedOldest(feedId: Long, count: Int): List<EpisodeEntity>
 
     // Partial download resume support
     @Query("UPDATE episodes SET downloadBytesDownloaded = :bytes WHERE id = :episodeId")

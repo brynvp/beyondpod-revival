@@ -7,6 +7,7 @@ import mobi.beyondpod.revival.data.local.converter.Converters
 import mobi.beyondpod.revival.data.local.dao.CategoryDao
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
+import mobi.beyondpod.revival.data.local.dao.ManualPlaylistDao
 import mobi.beyondpod.revival.data.local.dao.QueueSnapshotDao
 import mobi.beyondpod.revival.data.local.dao.SmartPlaylistDao
 import mobi.beyondpod.revival.data.local.entity.CategoryEntity
@@ -49,6 +50,7 @@ abstract class BeyondPodDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun smartPlaylistDao(): SmartPlaylistDao
     abstract fun queueSnapshotDao(): QueueSnapshotDao  // All queue mutations go here
+    abstract fun manualPlaylistDao(): ManualPlaylistDao
 
     companion object {
         const val DATABASE_NAME = "beyondpod.db"

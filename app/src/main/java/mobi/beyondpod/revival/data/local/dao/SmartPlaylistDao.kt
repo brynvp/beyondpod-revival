@@ -20,4 +20,7 @@ interface SmartPlaylistDao {
 
     @Delete
     suspend fun deletePlaylist(playlist: SmartPlaylistEntity)
+
+    @Query("SELECT * FROM smart_playlists WHERE isDefault = 1 LIMIT 1")
+    suspend fun getMyEpisodesPlaylist(): SmartPlaylistEntity?
 }
