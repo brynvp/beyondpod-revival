@@ -15,7 +15,7 @@ the most capable Android podcast app before it was abandoned. The full specifica
 
 ## Current Build Phase
 
-**PHASE: 0 — Not yet started**
+**PHASE: 1 — Data layer complete**
 
 Update this line at the start of each session to reflect where you are:
 - Phase 0: Scaffold only (project exists, no feature code)
@@ -28,7 +28,7 @@ Update this line at the start of each session to reflect where you are:
 - Phase 7: Import/Export + Settings
 - Phase 8: Widgets + Polish
 
-**Spec sections for current phase**: _(update this each session — e.g. "§5 Data Layer")_
+**Spec sections for current phase**: §6 Repository Layer (next: Phase 2)
 
 ---
 
