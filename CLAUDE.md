@@ -15,7 +15,7 @@ the most capable Android podcast app before it was abandoned. The full specifica
 
 ## Current Build Phase
 
-**PHASE: 2 — Repositories + Use Cases complete**
+**PHASE: 3 — Core Services complete (PlaybackService, DownloadWorker, FeedUpdateWorker)**
 
 Update this line at the start of each session to reflect where you are:
 - Phase 0: Scaffold only (project exists, no feature code)
