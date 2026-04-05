@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Queue
@@ -115,10 +116,10 @@ private fun BeyondPodDrawerContent(
             }
         )
 
-        // All Published (Phase 5)
+        // Feeds (Phase 5 — FeedListScreen, grouped by category)
         NavigationDrawerItem(
             icon  = { Icon(Icons.Default.Podcasts, contentDescription = null) },
-            label = { Text("All Published") },
+            label = { Text("Feeds") },
             selected = currentRoute == Screen.AllPublished.route,
             onClick = {
                 navController.navigate(Screen.AllPublished.route)
@@ -126,13 +127,24 @@ private fun BeyondPodDrawerContent(
             }
         )
 
-        // Add Feed (Phase 5)
+        // Add Podcast (Phase 5)
         NavigationDrawerItem(
             icon  = { Icon(Icons.Default.LibraryMusic, contentDescription = null) },
             label = { Text("Add Podcast") },
             selected = false,
             onClick = {
                 navController.navigate(Screen.AddFeed.route)
+                onDestinationSelected()
+            }
+        )
+
+        // Manage Categories (Phase 5)
+        NavigationDrawerItem(
+            icon  = { Icon(Icons.Default.Category, contentDescription = null) },
+            label = { Text("Manage Categories") },
+            selected = currentRoute == Screen.CategoryManagement.route,
+            onClick = {
+                navController.navigate(Screen.CategoryManagement.route)
                 onDestinationSelected()
             }
         )

@@ -11,6 +11,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import mobi.beyondpod.revival.ui.screens.addfeed.AddFeedScreen
+import mobi.beyondpod.revival.ui.screens.category.CategoryManagementScreen
+import mobi.beyondpod.revival.ui.screens.feeddetail.FeedDetailScreen
+import mobi.beyondpod.revival.ui.screens.feedlist.FeedListScreen
 import mobi.beyondpod.revival.ui.screens.myepisodes.MyEpisodesScreen
 
 @Composable
@@ -28,20 +32,32 @@ fun BeyondPodNavGraph(
             MyEpisodesScreen(navController = navController)
         }
 
-        // ── Stubs for future phases ───────────────────────────────────────────
+        // ── Feed list — all feeds grouped by category [phase-5] ───────────────
         composable(Screen.AllPublished.route) {
-            PlaceholderScreen("All Published — Phase 5")
+            FeedListScreen(navController = navController)
         }
 
+        // ── Feed detail — episodes + settings for one feed [phase-5] ─────────
         composable(
             route = Screen.FeedEpisodes.route,
             arguments = listOf(navArgument(Screen.FeedEpisodes.ARG_FEED_ID) {
                 type = NavType.LongType
             })
         ) {
-            PlaceholderScreen("Feed Episodes — Phase 5")
+            FeedDetailScreen(navController = navController)
         }
 
+        // ── Add feed [phase-5] ────────────────────────────────────────────────
+        composable(Screen.AddFeed.route) {
+            AddFeedScreen(navController = navController)
+        }
+
+        // ── Category management [phase-5] ─────────────────────────────────────
+        composable(Screen.CategoryManagement.route) {
+            CategoryManagementScreen(navController = navController)
+        }
+
+        // ── Stubs for future phases ───────────────────────────────────────────
         composable(
             route = Screen.Playlist.route,
             arguments = listOf(navArgument(Screen.Playlist.ARG_PLAYLIST_ID) {
@@ -53,10 +69,6 @@ fun BeyondPodNavGraph(
 
         composable(Screen.Settings.route) {
             PlaceholderScreen("Settings — Phase 7")
-        }
-
-        composable(Screen.AddFeed.route) {
-            PlaceholderScreen("Add Feed — Phase 5")
         }
 
         composable(Screen.DownloadQueue.route) {
