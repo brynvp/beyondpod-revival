@@ -13,6 +13,9 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY pubDate DESC")
     fun getEpisodesForFeed(feedId: Long): Flow<List<EpisodeEntity>>
 
+    @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY pubDate DESC")
+    suspend fun getEpisodesForFeedList(feedId: Long): List<EpisodeEntity>
+
     @Query("""
         SELECT * FROM episodes
         WHERE feedId = :feedId AND playState != 'PLAYED'
@@ -32,6 +35,9 @@ interface EpisodeDao {
 
     @Query("SELECT * FROM episodes WHERE url = :url AND feedId = :feedId LIMIT 1")
     suspend fun getEpisodeByUrl(url: String, feedId: Long): EpisodeEntity?
+
+    @Query("SELECT * FROM episodes WHERE localFilePath = :path LIMIT 1")
+    suspend fun getEpisodeByLocalPath(path: String): EpisodeEntity?
 
     @Upsert
     suspend fun upsertEpisode(episode: EpisodeEntity): Long

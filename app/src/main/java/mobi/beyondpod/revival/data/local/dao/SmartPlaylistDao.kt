@@ -12,6 +12,9 @@ interface SmartPlaylistDao {
     @Query("SELECT * FROM smart_playlists ORDER BY sortOrder ASC, name ASC")
     fun getAllPlaylists(): Flow<List<SmartPlaylistEntity>>
 
+    @Query("SELECT * FROM smart_playlists ORDER BY sortOrder ASC, name ASC")
+    suspend fun getAllPlaylistsList(): List<SmartPlaylistEntity>
+
     @Query("SELECT * FROM smart_playlists WHERE id = :id")
     suspend fun getPlaylistById(id: Long): SmartPlaylistEntity?
 

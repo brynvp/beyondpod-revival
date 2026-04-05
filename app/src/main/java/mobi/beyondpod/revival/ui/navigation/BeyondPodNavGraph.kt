@@ -19,6 +19,7 @@ import mobi.beyondpod.revival.ui.screens.myepisodes.MyEpisodesScreen
 import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistDetailScreen
 import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistListScreen
 import mobi.beyondpod.revival.ui.screens.queue.QueueScreen
+import mobi.beyondpod.revival.ui.screens.settings.SettingsScreen
 
 @Composable
 fun BeyondPodNavGraph(
@@ -80,9 +81,9 @@ fun BeyondPodNavGraph(
             QueueScreen(navController = navController)
         }
 
-        // ── Stubs for future phases ───────────────────────────────────────────
+        // ── Settings [phase-7] ────────────────────────────────────────────────
         composable(Screen.Settings.route) {
-            PlaceholderScreen("Settings — Phase 7")
+            SettingsScreen(navController = navController)
         }
 
         composable(Screen.DownloadQueue.route) {

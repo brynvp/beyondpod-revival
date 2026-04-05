@@ -1,16 +1,24 @@
 package mobi.beyondpod.revival.data.repository
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
+import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
-import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
+import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedCategoryCrossRef
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
-import java.io.File
+import mobi.beyondpod.revival.data.local.entity.PlayState
+import mobi.beyondpod.revival.data.parser.FeedParser
+import mobi.beyondpod.revival.data.parser.ParsedEpisode
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import javax.inject.Inject
 
 class FeedRepositoryImpl @Inject constructor(
-    private val feedDao: FeedDao
+    private val feedDao: FeedDao,
+    private val episodeDao: EpisodeDao,
+    private val episodeRepository: EpisodeRepository,
+    private val okHttpClient: OkHttpClient,
+    private val feedParser: FeedParser
 ) : FeedRepository {
 
     override fun getAllFeeds(): Flow<List<FeedEntity>> = feedDao.getAllFeeds()
@@ -21,17 +29,24 @@ class FeedRepositoryImpl @Inject constructor(
     override suspend fun getFeedById(id: Long): FeedEntity? = feedDao.getFeedById(id)
 
     override suspend fun subscribeToFeed(url: String): Result<FeedEntity> = runCatching {
-        // Phase 3 will fetch and parse the RSS feed. For now, create a minimal record.
         val existing = feedDao.getFeedByUrl(url)
         if (existing != null) return@runCatching existing
 
+        val parsed = fetchAndParse(url).getOrNull()
         val placeholder = FeedEntity(
-            url = url,
-            title = url,                   // overwritten when RSS is parsed in Phase 3
-            lastUpdated = 0L
+            url          = url,
+            title        = parsed?.title?.ifEmpty { url } ?: url,
+            description  = parsed?.description ?: "",
+            imageUrl     = parsed?.imageUrl,
+            author       = parsed?.author ?: "",
+            website      = parsed?.website ?: "",
+            language     = parsed?.language ?: "",
+            lastUpdated  = System.currentTimeMillis()
         )
         val id = feedDao.upsertFeed(placeholder)
-        feedDao.getFeedById(id) ?: placeholder.copy(id = id)
+        val feed = feedDao.getFeedById(id) ?: placeholder.copy(id = id)
+        parsed?.episodes?.forEach { episodeRepository.upsertEpisode(it.toEntity(feed.id)) }
+        feed
     }
 
     override suspend fun updateFeedProperties(feed: FeedEntity): Result<Unit> = runCatching {
@@ -40,43 +55,71 @@ class FeedRepositoryImpl @Inject constructor(
 
     override suspend fun deleteFeed(id: Long, deleteDownloads: Boolean) {
         val feed = feedDao.getFeedById(id) ?: return
-        // File deletion is handled by DownloadWorker/cleanup in Phase 3; for now, proceed.
+        if (deleteDownloads) {
+            episodeDao.getEpisodesForFeedList(id).forEach { ep ->
+                ep.localFilePath?.let { java.io.File(it).delete() }
+            }
+        }
         feedDao.deleteFeed(feed)
     }
 
-    override suspend fun refreshFeed(id: Long): Result<Unit> =
-        Result.failure(NotImplementedError("RSS parsing implemented in Phase 3 (FeedUpdateWorker)"))
+    /**
+     * Re-fetch the RSS, update feed metadata, upsert episodes (multi-key dedup), archive removed.
+     * Steps 1–4 of FeedUpdateWorker pipeline (CLAUDE.md rule #8).
+     */
+    override suspend fun refreshFeed(id: Long): Result<Unit> = runCatching {
+        val feed   = feedDao.getFeedById(id) ?: return@runCatching
+        val parsed = fetchAndParse(feed.url).getOrThrow()
 
-    override suspend fun refreshAllFeeds(): Result<Unit> =
-        Result.failure(NotImplementedError("RSS parsing implemented in Phase 3 (FeedUpdateWorker)"))
+        feedDao.upsertFeed(feed.copy(
+            title            = parsed.title.ifEmpty { feed.title },
+            description      = parsed.description.ifEmpty { feed.description },
+            imageUrl         = parsed.imageUrl ?: feed.imageUrl,
+            author           = parsed.author.ifEmpty { feed.author },
+            website          = parsed.website.ifEmpty { feed.website },
+            lastUpdated      = System.currentTimeMillis(),
+            lastUpdateFailed = false,
+            lastUpdateError  = null
+        ))
 
-    override suspend fun moveFeedToCategory(feedId: Long, categoryId: Long?, isPrimary: Boolean) {
-        // Remove the existing ref of the same type (primary or secondary).
-        feedDao.deleteFeedCategoryRefByType(feedId, isPrimary)
-
-        if (categoryId != null) {
-            feedDao.insertFeedCategoryRef(FeedCategoryCrossRef(feedId, categoryId, isPrimary))
+        val upsertedIds = mutableListOf<Long>()
+        parsed.episodes.forEach { ep ->
+            upsertedIds.add(episodeRepository.upsertEpisode(ep.toEntity(id)))
         }
-
-        // Keep the denormalized cache fields on FeedEntity in sync.
-        if (isPrimary) {
-            feedDao.updatePrimaryCategory(feedId, categoryId)
-        } else {
-            feedDao.updateSecondaryCategory(feedId, categoryId)
+        if (upsertedIds.isNotEmpty()) {
+            episodeDao.archiveRemovedEpisodes(id, upsertedIds)
         }
     }
 
-    /**
-     * OPML import — full SAX parsing is implemented in Phase 7 (§7.9).
-     * Returns Result.success(0) as a non-crashing stub.
-     */
-    override suspend fun importFromOpml(opmlContent: String): Result<Int> =
-        Result.success(0) // TODO Phase 7: implement SAX-based OPML parser
+    override suspend fun refreshAllFeeds(): Result<Unit> = runCatching {
+        feedDao.getAllFeedsList().forEach { feed -> refreshFeed(feed.id) }
+    }
+
+    override suspend fun moveFeedToCategory(feedId: Long, categoryId: Long?, isPrimary: Boolean) {
+        feedDao.deleteFeedCategoryRefByType(feedId, isPrimary)
+        if (categoryId != null) {
+            feedDao.insertFeedCategoryRef(FeedCategoryCrossRef(feedId, categoryId, isPrimary))
+        }
+        if (isPrimary) feedDao.updatePrimaryCategory(feedId, categoryId)
+        else           feedDao.updateSecondaryCategory(feedId, categoryId)
+    }
 
     /**
-     * Serialize all subscribed feeds to OPML 2.0 format.
-     * Feeds are grouped by primary category where possible.
+     * Parse OPML and upsert feed stubs for every `<outline type="rss">` found.
+     * SAX-based via [FeedParser.parseOpml] — no third-party library (CLAUDE.md rule).
      */
+    override suspend fun importFromOpml(opmlContent: String): Result<Int> = runCatching {
+        val outlines = feedParser.parseOpml(opmlContent)
+        var count = 0
+        outlines.forEach { (xmlUrl, title, _) ->
+            if (feedDao.getFeedByUrl(xmlUrl) == null) {
+                feedDao.upsertFeed(FeedEntity(url = xmlUrl, title = title.ifEmpty { xmlUrl }))
+                count++
+            }
+        }
+        count
+    }
+
     override suspend fun exportToOpml(): Result<String> = runCatching {
         val feeds = feedDao.getAllFeedsList()
         buildString {
@@ -85,19 +128,43 @@ class FeedRepositoryImpl @Inject constructor(
             appendLine("""  <head><title>BeyondPod Revival — Podcast Subscriptions</title></head>""")
             appendLine("""  <body>""")
             for (feed in feeds) {
-                val title = feed.title.escapeXml()
-                val xmlUrl = feed.url.escapeXml()
-                val htmlUrl = feed.website.escapeXml()
-                appendLine("""    <outline text="$title" title="$title" type="rss" xmlUrl="$xmlUrl" htmlUrl="$htmlUrl"/>""")
+                val t = feed.title.escapeXml()
+                val x = feed.url.escapeXml()
+                val h = feed.website.escapeXml()
+                appendLine("""    <outline text="$t" title="$t" type="rss" xmlUrl="$x" htmlUrl="$h"/>""")
             }
             appendLine("""  </body>""")
             appendLine("""</opml>""")
         }
     }
 
-    private fun String.escapeXml(): String = replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&apos;")
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun fetchAndParse(url: String) = runCatching {
+        val req = Request.Builder().url(url).header("User-Agent", "BeyondPodRevival/5.0").build()
+        okHttpClient.newCall(req).execute().use { resp ->
+            check(resp.isSuccessful) { "HTTP ${resp.code} for $url" }
+            feedParser.parse(resp.body?.byteStream() ?: error("Empty response body"))
+        }
+    }
+
+    private fun ParsedEpisode.toEntity(feedId: Long) = EpisodeEntity(
+        feedId        = feedId,
+        guid          = guid.ifEmpty { url },
+        title         = title,
+        description   = description,
+        pubDate       = pubDate,
+        url           = url,
+        mimeType      = mimeType,
+        fileSizeBytes = fileSizeBytes,
+        duration      = duration,
+        imageUrl      = imageUrl,
+        author        = author,
+        chapterUrl    = chapterUrl,
+        transcriptUrl = transcriptUrl,
+        playState     = PlayState.NEW
+    )
+
+    private fun String.escapeXml() = replace("&", "&amp;").replace("<", "&lt;")
+        .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
 }

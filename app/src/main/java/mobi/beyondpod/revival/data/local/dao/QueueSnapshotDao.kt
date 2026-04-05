@@ -14,9 +14,13 @@ import mobi.beyondpod.revival.data.local.entity.QueueSnapshotItemEntity
  */
 @Dao
 interface QueueSnapshotDao {
-    // Get the active snapshot
+    // Get the active snapshot (reactive)
     @Query("SELECT * FROM queue_snapshots WHERE isActive = 1 LIMIT 1")
     fun getActiveSnapshot(): Flow<QueueSnapshotEntity?>
+
+    // One-shot read for backup/export
+    @Query("SELECT * FROM queue_snapshots WHERE isActive = 1 LIMIT 1")
+    suspend fun getActiveSnapshotOnce(): QueueSnapshotEntity?
 
     @Query("""
         SELECT * FROM queue_snapshot_items
@@ -24,6 +28,13 @@ interface QueueSnapshotDao {
         ORDER BY position ASC
     """)
     fun getSnapshotItems(snapshotId: Long): Flow<List<QueueSnapshotItemEntity>>
+
+    @Query("""
+        SELECT * FROM queue_snapshot_items
+        WHERE snapshotId = :snapshotId
+        ORDER BY position ASC
+    """)
+    suspend fun getSnapshotItemsList(snapshotId: Long): List<QueueSnapshotItemEntity>
 
     // Atomic snapshot replacement — deactivate all old snapshots, insert new one + items
     @Transaction

@@ -1,0 +1,412 @@
+package mobi.beyondpod.revival.ui.screens.settings
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    navController: NavController,
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val state by viewModel.uiState.collectAsState()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+
+            // ── Playback ──────────────────────────────────────────────────────
+            item { SectionHeader("Playback", Icons.AutoMirrored.Filled.VolumeUp) }
+            item {
+                StepperPref(
+                    title   = "Skip back",
+                    subtitle = "${state.skipBackSeconds}s",
+                    onDecrement = { if (state.skipBackSeconds > 5) viewModel.setSkipBackSeconds(state.skipBackSeconds - 5) },
+                    onIncrement = { if (state.skipBackSeconds < 120) viewModel.setSkipBackSeconds(state.skipBackSeconds + 5) }
+                )
+            }
+            item {
+                StepperPref(
+                    title    = "Skip forward",
+                    subtitle = "${state.skipForwardSeconds}s",
+                    onDecrement = { if (state.skipForwardSeconds > 5) viewModel.setSkipForwardSeconds(state.skipForwardSeconds - 5) },
+                    onIncrement = { if (state.skipForwardSeconds < 120) viewModel.setSkipForwardSeconds(state.skipForwardSeconds + 5) }
+                )
+            }
+            item {
+                SwitchPref(
+                    title   = "Skip silence",
+                    checked = state.skipSilence,
+                    onCheckedChange = viewModel::setSkipSilence
+                )
+            }
+            item {
+                SwitchPref(
+                    title   = "Pause on headphone unplug",
+                    checked = state.pauseOnHeadphoneUnplug,
+                    onCheckedChange = viewModel::setPauseOnHeadphoneUnplug
+                )
+            }
+            item {
+                SwitchPref(
+                    title   = "Pause on incoming notification",
+                    checked = state.pauseOnNotification,
+                    onCheckedChange = viewModel::setPauseOnNotification
+                )
+            }
+            item {
+                SwitchPref(
+                    title   = "Continue playback after episode ends",
+                    checked = state.continuousPlayback,
+                    onCheckedChange = viewModel::setContinuousPlayback
+                )
+            }
+            item { HorizontalDivider() }
+
+            // ── Updates ───────────────────────────────────────────────────────
+            item { SectionHeader("Feed Updates", Icons.Default.Refresh) }
+            item {
+                SwitchPref(
+                    title   = "Auto-update feeds",
+                    checked = state.autoUpdateEnabled,
+                    onCheckedChange = viewModel::setAutoUpdateEnabled
+                )
+            }
+            item {
+                ListPref(
+                    title    = "Update interval",
+                    subtitle = "${state.updateIntervalHours}h",
+                    options  = listOf(1, 2, 4, 6, 12, 24),
+                    current  = state.updateIntervalHours,
+                    label    = { "${it}h" },
+                    onSelect = viewModel::setUpdateIntervalHours
+                )
+            }
+            item {
+                SwitchPref(
+                    title   = "Update on Wi-Fi only",
+                    checked = state.updateOnWifiOnly,
+                    onCheckedChange = viewModel::setUpdateOnWifiOnly
+                )
+            }
+            item {
+                SwitchPref(
+                    title   = "Turn on Wi-Fi for updates",
+                    checked = state.turnWifiDuringUpdate,
+                    onCheckedChange = viewModel::setTurnWifiDuringUpdate
+                )
+            }
+            item { HorizontalDivider() }
+
+            // ── Downloads ─────────────────────────────────────────────────────
+            item { SectionHeader("Downloads", Icons.Default.Download) }
+            item {
+                SwitchPref(
+                    title   = "Download on Wi-Fi only",
+                    checked = state.downloadOnWifiOnly,
+                    onCheckedChange = viewModel::setDownloadOnWifiOnly
+                )
+            }
+            item {
+                StepperPref(
+                    title    = "Auto-download count (per feed)",
+                    subtitle = if (state.globalDownloadCount == 0) "Disabled" else state.globalDownloadCount.toString(),
+                    onDecrement = { if (state.globalDownloadCount > 0) viewModel.setGlobalDownloadCount(state.globalDownloadCount - 1) },
+                    onIncrement = { if (state.globalDownloadCount < 10) viewModel.setGlobalDownloadCount(state.globalDownloadCount + 1) }
+                )
+            }
+            item {
+                StepperPref(
+                    title    = "Keep downloaded episodes",
+                    subtitle = if (state.globalMaxKeep == 0) "All" else state.globalMaxKeep.toString(),
+                    onDecrement = { if (state.globalMaxKeep > 0) viewModel.setGlobalMaxKeep(state.globalMaxKeep - 1) },
+                    onIncrement = { if (state.globalMaxKeep < 50) viewModel.setGlobalMaxKeep(state.globalMaxKeep + 1) }
+                )
+            }
+            item {
+                SwitchPref(
+                    title   = "Auto-delete played episodes",
+                    checked = state.autoDeletePlayed,
+                    onCheckedChange = viewModel::setAutoDeletePlayed
+                )
+            }
+            item { HorizontalDivider() }
+
+            // ── Notifications ─────────────────────────────────────────────────
+            item { SectionHeader("Notifications", Icons.Default.Notifications) }
+            item {
+                SwitchPref("New episodes",         state.notifNewEpisodes,      viewModel::setNotifNewEpisodes)
+            }
+            item {
+                SwitchPref("Download complete",    state.notifDownloadComplete, viewModel::setNotifDownloadComplete)
+            }
+            item {
+                SwitchPref("Download failed",      state.notifDownloadFailed,   viewModel::setNotifDownloadFailed)
+            }
+            item {
+                SwitchPref("Playback controls",    state.notifPlaybackControls, viewModel::setNotifPlaybackControls)
+            }
+            item {
+                SwitchPref("Feed update failed",   state.notifFeedUpdateFailed, viewModel::setNotifFeedUpdateFailed)
+            }
+            item {
+                SwitchPref("Episode finished",     state.notifEpisodeFinished,  viewModel::setNotifEpisodeFinished)
+            }
+            item {
+                SwitchPref("Queue empty",          state.notifQueueEmpty,       viewModel::setNotifQueueEmpty)
+            }
+            item {
+                SwitchPref("New subscription",     state.notifSubscriptionNew,  viewModel::setNotifSubscriptionNew)
+            }
+            item {
+                SwitchPref("Storage low",          state.notifStorageLow,       viewModel::setNotifStorageLow)
+            }
+            item {
+                SwitchPref("Auto-add episodes",    state.notifAutoAdd,          viewModel::setNotifAutoAdd)
+            }
+            item {
+                SwitchPref("Sleep timer",          state.notifSleepTimer,       viewModel::setNotifSleepTimer)
+            }
+            item {
+                SwitchPref("Rewind reminder",      state.notifRewindReminder,   viewModel::setNotifRewindReminder)
+            }
+            item {
+                SwitchPref("Auto-cleanup",         state.notifCleanup,          viewModel::setNotifCleanup)
+            }
+            item {
+                SwitchPref("Update check",         state.notifUpdateCheck,      viewModel::setNotifUpdateCheck)
+            }
+            item {
+                SwitchPref("Wi-Fi required",       state.notifWifiRequired,     viewModel::setNotifWifiRequired)
+            }
+            item {
+                SwitchPref("Scrobble error",       state.notifScrobbleError,    viewModel::setNotifScrobbleError)
+            }
+            item {
+                SwitchPref("Gpodder sync",         state.notifGpodderSync,      viewModel::setNotifGpodderSync)
+            }
+            item {
+                SwitchPref("Download on charge",   state.notifChargeDownload,   viewModel::setNotifChargeDownload)
+            }
+            item {
+                SwitchPref("Playlist rebuild",     state.notifPlaylistRebuild,  viewModel::setNotifPlaylistRebuild)
+            }
+            item {
+                SwitchPref("General errors",       state.notifErrorGeneric,     viewModel::setNotifErrorGeneric)
+            }
+            item { HorizontalDivider() }
+
+            // ── Interface ─────────────────────────────────────────────────────
+            item { SectionHeader("Interface", Icons.Default.Palette) }
+            item {
+                ListPref(
+                    title    = "Theme",
+                    subtitle = state.theme.replaceFirstChar { it.uppercase() },
+                    options  = listOf("system", "light", "dark"),
+                    current  = state.theme,
+                    label    = { it.replaceFirstChar { c -> c.uppercase() } },
+                    onSelect = viewModel::setTheme
+                )
+            }
+            item { HorizontalDivider() }
+
+            // ── Scrobbling ────────────────────────────────────────────────────
+            item { SectionHeader("Scrobbling", Icons.Default.Star) }
+            item {
+                SwitchPref(
+                    title   = "Enable scrobbling",
+                    checked = state.scrobbleEnabled,
+                    onCheckedChange = viewModel::setScrobbleEnabled
+                )
+            }
+            item { HorizontalDivider() }
+
+            // ── About ─────────────────────────────────────────────────────────
+            item { SectionHeader("About", Icons.Default.Info) }
+            item {
+                PrefItem(title = "BeyondPod Revival", subtitle = "Version 5.0.0 — Open source, MIT License")
+            }
+
+            item { Spacer(Modifier.height(32.dp)) }
+        }
+    }
+}
+
+// ── Pref composables ──────────────────────────────────────────────────────────
+
+@Composable
+private fun SectionHeader(title: String, icon: ImageVector) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(end = 8.dp)
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+private fun SwitchPref(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    subtitle: String? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun StepperPref(
+    title: String,
+    subtitle: String,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+        IconButton(onClick = onDecrement) {
+            Text("−", style = MaterialTheme.typography.titleMedium)
+        }
+        IconButton(onClick = onIncrement) {
+            Text("+", style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun <T> ListPref(
+    title: String,
+    subtitle: String,
+    options: List<T>,
+    current: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit
+) {
+    // Simple cycling preference — tap to cycle through options
+    val currentIdx = options.indexOf(current).coerceAtLeast(0)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect(options[(currentIdx + 1) % options.size]) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PrefItem(title: String, subtitle: String? = null) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        if (subtitle != null) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
