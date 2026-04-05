@@ -16,6 +16,9 @@ import mobi.beyondpod.revival.ui.screens.category.CategoryManagementScreen
 import mobi.beyondpod.revival.ui.screens.feeddetail.FeedDetailScreen
 import mobi.beyondpod.revival.ui.screens.feedlist.FeedListScreen
 import mobi.beyondpod.revival.ui.screens.myepisodes.MyEpisodesScreen
+import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistDetailScreen
+import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistListScreen
+import mobi.beyondpod.revival.ui.screens.queue.QueueScreen
 
 @Composable
 fun BeyondPodNavGraph(
@@ -57,26 +60,37 @@ fun BeyondPodNavGraph(
             CategoryManagementScreen(navController = navController)
         }
 
-        // ── Stubs for future phases ───────────────────────────────────────────
+        // ── Smart playlist list [phase-6] ─────────────────────────────────────
+        composable(Screen.SmartPlaylists.route) {
+            SmartPlaylistListScreen(navController = navController)
+        }
+
+        // ── Smart playlist detail + editor [phase-6] ──────────────────────────
         composable(
             route = Screen.Playlist.route,
             arguments = listOf(navArgument(Screen.Playlist.ARG_PLAYLIST_ID) {
                 type = NavType.LongType
             })
         ) {
-            PlaceholderScreen("Playlist — Phase 6")
+            SmartPlaylistDetailScreen(navController = navController)
         }
 
+        // ── Active playback queue [phase-6] ───────────────────────────────────
+        composable(Screen.Queue.route) {
+            QueueScreen(navController = navController)
+        }
+
+        // ── Stubs for future phases ───────────────────────────────────────────
         composable(Screen.Settings.route) {
             PlaceholderScreen("Settings — Phase 7")
         }
 
         composable(Screen.DownloadQueue.route) {
-            PlaceholderScreen("Download Queue — Phase 5")
+            PlaceholderScreen("Download Queue — Phase 7")
         }
 
         composable(Screen.FullPlayer.route) {
-            PlaceholderScreen("Full Player — Phase 6")
+            PlaceholderScreen("Full Player — Phase 7")
         }
     }
 }

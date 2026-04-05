@@ -45,6 +45,9 @@ coroutines = "1.9.0"
 # Gson
 gson = "2.11.0"
 
+# Reorderable LazyList (sh.calvin.reorderable — used for drag-to-reorder in queue/playlists)
+reorderable = "2.1.1"
+
 # Testing
 junit = "4.13.2"
 junitVersion = "1.2.1"
@@ -116,6 +119,9 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 
 # ── Gson ─────────────────────────────────────────────────────────────────────
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+
+# ── Reorderable ───────────────────────────────────────────────────────────────
+reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
 
 # ── Testing ──────────────────────────────────────────────────────────────────
 junit = { group = "junit", name = "junit", version.ref = "junit" }

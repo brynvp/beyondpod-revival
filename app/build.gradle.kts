@@ -100,6 +100,9 @@ dependencies {
     // Gson
     implementation(libs.gson)
 
+    // Reorderable (drag-to-reorder for queue and playlists — sh.calvin.reorderable)
+    implementation(libs.reorderable)
+
     // AndroidX Core
     implementation(libs.core.ktx)
     implementation(libs.appcompat)

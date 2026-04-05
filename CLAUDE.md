@@ -15,7 +15,7 @@ the most capable Android podcast app before it was abandoned. The full specifica
 
 ## Current Build Phase
 
-**PHASE: 5 — Feed management UI complete**
+**PHASE: 6 — SmartPlay + Queue UI complete**
 
 Update this line at the start of each session to reflect where you are:
 - Phase 0: Scaffold only (project exists, no feature code)

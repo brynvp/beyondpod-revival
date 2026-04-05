@@ -8,6 +8,8 @@ sealed class Screen(val route: String) {
     data object AddFeed             : Screen("add_feed")
     data object DownloadQueue       : Screen("download_queue")
     data object CategoryManagement  : Screen("category_management")
+    data object SmartPlaylists      : Screen("smart_playlists")
+    data object Queue               : Screen("queue")
 
     data object FeedEpisodes : Screen("feed_episodes/{feedId}") {
         fun createRoute(feedId: Long) = "feed_episodes/$feedId"

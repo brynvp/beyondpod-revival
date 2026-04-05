@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Queue
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
@@ -145,6 +147,30 @@ private fun BeyondPodDrawerContent(
             selected = currentRoute == Screen.CategoryManagement.route,
             onClick = {
                 navController.navigate(Screen.CategoryManagement.route)
+                onDestinationSelected()
+            }
+        )
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        // Playlists (Phase 6)
+        NavigationDrawerItem(
+            icon  = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
+            label = { Text("Playlists") },
+            selected = currentRoute == Screen.SmartPlaylists.route,
+            onClick = {
+                navController.navigate(Screen.SmartPlaylists.route)
+                onDestinationSelected()
+            }
+        )
+
+        // Queue (Phase 6)
+        NavigationDrawerItem(
+            icon  = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
+            label = { Text("Queue") },
+            selected = currentRoute == Screen.Queue.route,
+            onClick = {
+                navController.navigate(Screen.Queue.route)
                 onDestinationSelected()
             }
         )
