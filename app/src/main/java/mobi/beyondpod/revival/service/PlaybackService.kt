@@ -198,6 +198,11 @@ class PlaybackService : MediaSessionService() {
             while (isActive) {
                 delay(5_000L)
                 if (player.isPlaying) {
+                    // Guard: stop the timer if the episode was deleted while playing
+                    if (episodeRepository.getEpisodeById(episodeId) == null) {
+                        stopPositionSaving()
+                        return@launch
+                    }
                     episodeRepository.savePlayPosition(episodeId, player.currentPosition)
                 }
             }

@@ -103,10 +103,12 @@ class DownloadWorker @AssistedInject constructor(
                     }
                 }
 
-                episodeDao.updateDownloadState(
+                // Use actual on-disk file size, not Content-Length (which may be absent or wrong)
+                episodeDao.updateDownloadComplete(
                     episodeId,
                     DownloadStateEnum.DOWNLOADED,
-                    outputFile.absolutePath
+                    outputFile.absolutePath,
+                    outputFile.length()
                 )
             }
             Result.success()

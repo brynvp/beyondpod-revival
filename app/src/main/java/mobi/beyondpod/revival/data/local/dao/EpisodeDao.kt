@@ -78,6 +78,19 @@ interface EpisodeDao {
     @Query("UPDATE episodes SET downloadState = :state, localFilePath = :path WHERE id = :episodeId")
     suspend fun updateDownloadState(episodeId: Long, state: DownloadStateEnum, path: String?)
 
+    /** Called only on successful completion — also persists the real on-disk file size. */
+    @Query("""
+        UPDATE episodes
+        SET downloadState = :state, localFilePath = :path, fileSizeBytes = :fileSizeBytes
+        WHERE id = :episodeId
+    """)
+    suspend fun updateDownloadComplete(
+        episodeId: Long,
+        state: DownloadStateEnum,
+        path: String?,
+        fileSizeBytes: Long
+    )
+
     // Queue membership query — join through snapshot, not episode-level flags
     @Query("""
         SELECT e.* FROM episodes e

@@ -1,12 +1,17 @@
 package mobi.beyondpod.revival.data.repository
 
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
+import mobi.beyondpod.revival.data.local.dao.SmartPlaylistDao
+import mobi.beyondpod.revival.data.local.entity.BlockSource
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedCategoryCrossRef
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.local.entity.PlayState
+import mobi.beyondpod.revival.data.local.entity.PlaylistRuleMode
+import mobi.beyondpod.revival.data.local.entity.SmartPlaylistBlock
 import mobi.beyondpod.revival.data.parser.FeedParser
 import mobi.beyondpod.revival.data.parser.ParsedEpisode
 import okhttp3.OkHttpClient
@@ -18,7 +23,9 @@ class FeedRepositoryImpl @Inject constructor(
     private val episodeDao: EpisodeDao,
     private val episodeRepository: EpisodeRepository,
     private val okHttpClient: OkHttpClient,
-    private val feedParser: FeedParser
+    private val feedParser: FeedParser,
+    private val smartPlaylistDao: SmartPlaylistDao,
+    private val gson: Gson
 ) : FeedRepository {
 
     override fun getAllFeeds(): Flow<List<FeedEntity>> = feedDao.getAllFeeds()
@@ -61,6 +68,24 @@ class FeedRepositoryImpl @Inject constructor(
             }
         }
         feedDao.deleteFeed(feed)
+        prunePlaylistBlocksForFeed(id)
+    }
+
+    /**
+     * Remove any SmartPlaylistBlock entries whose sourceId matches [feedId].
+     * Called after deleting a feed so SEQUENTIAL_BLOCKS playlists don't reference a ghost feed.
+     */
+    private suspend fun prunePlaylistBlocksForFeed(feedId: Long) {
+        smartPlaylistDao.getAllPlaylistsList().forEach { playlist ->
+            if (playlist.ruleMode != PlaylistRuleMode.SEQUENTIAL_BLOCKS) return@forEach
+            val blocks = runCatching {
+                gson.fromJson(playlist.rulesJson, Array<SmartPlaylistBlock>::class.java).toList()
+            }.getOrElse { return@forEach }
+            val pruned = blocks.filter { it.source != BlockSource.FEED || it.sourceId != feedId }
+            if (pruned.size != blocks.size) {
+                smartPlaylistDao.upsertPlaylist(playlist.copy(rulesJson = gson.toJson(pruned)))
+            }
+        }
     }
 
     /**
