@@ -3,6 +3,8 @@ package mobi.beyondpod.revival.service
 import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -17,10 +19,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
+import mobi.beyondpod.revival.data.settings.AppSettings
 import mobi.beyondpod.revival.widget.PlaybackWidgetState
 import javax.inject.Inject
 
@@ -40,6 +44,7 @@ import javax.inject.Inject
 class PlaybackService : MediaSessionService() {
 
     @Inject lateinit var episodeRepository: EpisodeRepository
+    @Inject lateinit var dataStore: DataStore<Preferences>
 
     private lateinit var player: ExoPlayer
     private lateinit var mediaSession: MediaSession
@@ -63,6 +68,10 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_TOGGLE_PLAYBACK = "mobi.beyondpod.revival.TOGGLE_PLAYBACK"
         const val ACTION_SKIP_BACK       = "mobi.beyondpod.revival.SKIP_BACK"
         const val ACTION_SKIP_FORWARD    = "mobi.beyondpod.revival.SKIP_FORWARD"
+
+        // Settings-aware rewind / fast-forward (reads SKIP_BACK_SECONDS / SKIP_FORWARD_SECONDS)
+        const val ACTION_REWIND          = "mobi.beyondpod.revival.REWIND"
+        const val ACTION_FAST_FORWARD    = "mobi.beyondpod.revival.FAST_FORWARD"
 
         /** Load and play a single episode. Required extra: [EXTRA_EPISODE_ID]. */
         const val ACTION_PLAY_EPISODE  = "mobi.beyondpod.revival.PLAY_EPISODE"
@@ -115,6 +124,14 @@ class PlaybackService : MediaSessionService() {
             ACTION_TOGGLE_PLAYBACK -> if (player.isPlaying) player.pause() else player.play()
             ACTION_SKIP_BACK       -> player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0))
             ACTION_SKIP_FORWARD    -> player.seekTo(player.currentPosition + 30_000L)
+            ACTION_REWIND          -> serviceScope.launch {
+                val skipSec = dataStore.data.first()[AppSettings.SKIP_BACK_SECONDS] ?: 10
+                player.seekTo((player.currentPosition - skipSec * 1000L).coerceAtLeast(0))
+            }
+            ACTION_FAST_FORWARD    -> serviceScope.launch {
+                val skipSec = dataStore.data.first()[AppSettings.SKIP_FORWARD_SECONDS] ?: 30
+                player.seekTo(player.currentPosition + skipSec * 1000L)
+            }
             ACTION_PLAY_EPISODE    -> {
                 val episodeId = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
                 if (episodeId >= 0) loadAndPlay(episodeId)

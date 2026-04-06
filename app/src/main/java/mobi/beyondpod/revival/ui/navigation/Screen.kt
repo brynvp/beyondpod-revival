@@ -23,4 +23,9 @@ sealed class Screen(val route: String) {
 
     data object FullPlayer        : Screen("full_player")
     data object PodcastSearch    : Screen("podcast_search")
+
+    data object EpisodeNotes : Screen("episode_notes/{episodeId}") {
+        fun createRoute(episodeId: Long) = "episode_notes/$episodeId"
+        const val ARG_EPISODE_ID = "episodeId"
+    }
 }

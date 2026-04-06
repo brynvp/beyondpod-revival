@@ -38,7 +38,9 @@ import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.ui.components.MiniPlayer
 import mobi.beyondpod.revival.ui.navigation.BeyondPodNavGraph
 import mobi.beyondpod.revival.ui.navigation.Screen
+import mobi.beyondpod.revival.ui.player.PlaybackViewModel
 import mobi.beyondpod.revival.ui.theme.BeyondPodTheme
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -55,9 +57,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppShell() {
-    val navController  = rememberNavController()
-    val drawerState    = rememberDrawerState(DrawerValue.Closed)
-    val coroutineScope = rememberCoroutineScope()
+    val navController     = rememberNavController()
+    val drawerState       = rememberDrawerState(DrawerValue.Closed)
+    val coroutineScope    = rememberCoroutineScope()
+    // Activity-scoped: shared between MiniPlayer and PlayerScreen so they see the same state.
+    val playbackViewModel = hiltViewModel<PlaybackViewModel>()
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -76,11 +80,15 @@ fun AppShell() {
             modifier = Modifier.fillMaxSize(),
             bottomBar = {
                 // Mini player is always present (visible only when episode loaded — §7.6)
-                MiniPlayer(onTap = { navController.navigate(Screen.FullPlayer.route) })
+                MiniPlayer(
+                    onTap = { navController.navigate(Screen.FullPlayer.route) },
+                    viewModel = playbackViewModel
+                )
             }
         ) { innerPadding ->
             BeyondPodNavGraph(
                 navController = navController,
+                playbackViewModel = playbackViewModel,
                 modifier = Modifier.padding(innerPadding)
             )
         }

@@ -11,12 +11,15 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import mobi.beyondpod.revival.ui.player.PlaybackViewModel
 import mobi.beyondpod.revival.ui.screens.addfeed.AddFeedScreen
 import mobi.beyondpod.revival.ui.screens.search.PodcastSearchScreen
 import mobi.beyondpod.revival.ui.screens.category.CategoryManagementScreen
 import mobi.beyondpod.revival.ui.screens.feeddetail.FeedDetailScreen
 import mobi.beyondpod.revival.ui.screens.feedlist.FeedListScreen
 import mobi.beyondpod.revival.ui.screens.myepisodes.MyEpisodesScreen
+import mobi.beyondpod.revival.ui.screens.player.EpisodeNotesScreen
+import mobi.beyondpod.revival.ui.screens.player.PlayerScreen
 import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistDetailScreen
 import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistListScreen
 import mobi.beyondpod.revival.ui.screens.queue.QueueScreen
@@ -25,6 +28,7 @@ import mobi.beyondpod.revival.ui.screens.settings.SettingsScreen
 @Composable
 fun BeyondPodNavGraph(
     navController: NavHostController,
+    playbackViewModel: PlaybackViewModel,
     modifier: Modifier = Modifier
 ) {
     NavHost(
@@ -91,8 +95,22 @@ fun BeyondPodNavGraph(
             PlaceholderScreen("Download Queue — Phase 7")
         }
 
+        // ── Full player screen ────────────────────────────────────────────────
         composable(Screen.FullPlayer.route) {
-            PlaceholderScreen("Full Player — Phase 7")
+            PlayerScreen(
+                navController = navController,
+                viewModel = playbackViewModel
+            )
+        }
+
+        // ── Episode show notes ────────────────────────────────────────────────
+        composable(
+            route = Screen.EpisodeNotes.route,
+            arguments = listOf(navArgument(Screen.EpisodeNotes.ARG_EPISODE_ID) {
+                type = NavType.LongType
+            })
+        ) {
+            EpisodeNotesScreen(navController = navController)
         }
 
         // ── Podcast search / discovery ────────────────────────────────────────
