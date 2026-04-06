@@ -21,5 +21,6 @@ sealed class Screen(val route: String) {
         const val ARG_PLAYLIST_ID = "playlistId"
     }
 
-    data object FullPlayer : Screen("full_player")
+    data object FullPlayer        : Screen("full_player")
+    data object PodcastSearch    : Screen("podcast_search")
 }

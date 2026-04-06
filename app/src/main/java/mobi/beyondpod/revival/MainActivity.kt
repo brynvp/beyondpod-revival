@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Queue
@@ -125,6 +126,17 @@ private fun BeyondPodDrawerContent(
             selected = currentRoute == Screen.AllPublished.route,
             onClick = {
                 navController.navigate(Screen.AllPublished.route)
+                onDestinationSelected()
+            }
+        )
+
+        // Search Podcasts
+        NavigationDrawerItem(
+            icon     = { Icon(Icons.Default.Search, contentDescription = null) },
+            label    = { Text("Search Podcasts") },
+            selected = currentRoute == Screen.PodcastSearch.route,
+            onClick  = {
+                navController.navigate(Screen.PodcastSearch.route)
                 onDestinationSelected()
             }
         )

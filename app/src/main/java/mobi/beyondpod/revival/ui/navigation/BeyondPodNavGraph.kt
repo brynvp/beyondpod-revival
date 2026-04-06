@@ -12,6 +12,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import mobi.beyondpod.revival.ui.screens.addfeed.AddFeedScreen
+import mobi.beyondpod.revival.ui.screens.search.PodcastSearchScreen
 import mobi.beyondpod.revival.ui.screens.category.CategoryManagementScreen
 import mobi.beyondpod.revival.ui.screens.feeddetail.FeedDetailScreen
 import mobi.beyondpod.revival.ui.screens.feedlist.FeedListScreen
@@ -92,6 +93,11 @@ fun BeyondPodNavGraph(
 
         composable(Screen.FullPlayer.route) {
             PlaceholderScreen("Full Player — Phase 7")
+        }
+
+        // ── Podcast search / discovery ────────────────────────────────────────
+        composable(Screen.PodcastSearch.route) {
+            PodcastSearchScreen(navController = navController)
         }
     }
 }
