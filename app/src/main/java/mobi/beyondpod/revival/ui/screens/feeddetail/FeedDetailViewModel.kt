@@ -15,6 +15,7 @@ import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
+import mobi.beyondpod.revival.domain.usecase.download.EnqueueDownloadUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.DeleteFeedUseCase
 import mobi.beyondpod.revival.ui.navigation.Screen
 import javax.inject.Inject
@@ -40,7 +41,8 @@ class FeedDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val feedRepository: FeedRepository,
     private val episodeRepository: EpisodeRepository,
-    private val deleteFeedUseCase: DeleteFeedUseCase
+    private val deleteFeedUseCase: DeleteFeedUseCase,
+    private val enqueueDownloadUseCase: EnqueueDownloadUseCase
 ) : ViewModel() {
 
     val feedId: Long = checkNotNull(savedStateHandle[Screen.FeedEpisodes.ARG_FEED_ID])
@@ -84,6 +86,10 @@ class FeedDetailViewModel @Inject constructor(
         viewModelScope.launch {
             feedRepository.updateFeedProperties(feed)
         }
+    }
+
+    fun downloadEpisode(episodeId: Long) {
+        viewModelScope.launch { enqueueDownloadUseCase(episodeId) }
     }
 
     /**

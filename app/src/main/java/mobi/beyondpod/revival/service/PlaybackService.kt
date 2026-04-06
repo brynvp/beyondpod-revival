@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.widget.PlaybackWidgetState
 import javax.inject.Inject
@@ -62,6 +63,17 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_TOGGLE_PLAYBACK = "mobi.beyondpod.revival.TOGGLE_PLAYBACK"
         const val ACTION_SKIP_BACK       = "mobi.beyondpod.revival.SKIP_BACK"
         const val ACTION_SKIP_FORWARD    = "mobi.beyondpod.revival.SKIP_FORWARD"
+
+        /** Load and play a single episode. Required extra: [EXTRA_EPISODE_ID]. */
+        const val ACTION_PLAY_EPISODE  = "mobi.beyondpod.revival.PLAY_EPISODE"
+        const val EXTRA_EPISODE_ID     = "episode_id"
+
+        /** Convenience — build and fire the play-episode intent. */
+        fun playEpisodeIntent(context: android.content.Context, episodeId: Long): Intent =
+            Intent(context, PlaybackService::class.java).apply {
+                action = ACTION_PLAY_EPISODE
+                putExtra(EXTRA_EPISODE_ID, episodeId)
+            }
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -103,6 +115,10 @@ class PlaybackService : MediaSessionService() {
             ACTION_TOGGLE_PLAYBACK -> if (player.isPlaying) player.pause() else player.play()
             ACTION_SKIP_BACK       -> player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0))
             ACTION_SKIP_FORWARD    -> player.seekTo(player.currentPosition + 30_000L)
+            ACTION_PLAY_EPISODE    -> {
+                val episodeId = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
+                if (episodeId >= 0) loadAndPlay(episodeId)
+            }
         }
         return START_STICKY
     }
@@ -115,6 +131,31 @@ class PlaybackService : MediaSessionService() {
         player.removeListener(playerListener)
         player.release()
         super.onDestroy()
+    }
+
+    // ── Single episode playback ───────────────────────────────────────────────
+
+    /**
+     * Look up [episodeId] in the DB, resolve the playback URI (local file preferred),
+     * seek to the saved position, and start playing. Must be called from [serviceScope]
+     * (Dispatchers.Main) so player operations are on the correct thread.
+     */
+    private fun loadAndPlay(episodeId: Long) {
+        serviceScope.launch {
+            val episode = episodeRepository.getEpisodeById(episodeId) ?: return@launch
+            // Prefer local file; fall back to streaming URL
+            val uri = episode.localFilePath
+                ?.takeIf { File(it).exists() }
+                ?: episode.url
+            val mediaItem = MediaItem.Builder()
+                .setMediaId(episodeId.toString())
+                .setUri(uri)
+                .build()
+            player.setMediaItem(mediaItem)
+            if (episode.playPosition > 0) player.seekTo(episode.playPosition)
+            player.prepare()
+            player.play()
+        }
     }
 
     // ── Volume boost (LoudnessEnhancer — §7.6) ────────────────────────────────

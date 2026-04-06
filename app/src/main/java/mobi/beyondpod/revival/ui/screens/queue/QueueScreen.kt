@@ -2,6 +2,7 @@ package mobi.beyondpod.revival.ui.screens.queue
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
+import mobi.beyondpod.revival.service.PlaybackService
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -75,6 +77,7 @@ fun QueueScreen(
     viewModel: QueueViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showClearDialog by remember { mutableStateOf(false) }
@@ -178,7 +181,14 @@ fun QueueScreen(
                                     Surface(shadowElevation = elevation) {
                                         QueueItemRow(
                                             item = item,
-                                            dragHandleModifier = Modifier.draggableHandle()
+                                            dragHandleModifier = Modifier.draggableHandle(),
+                                            onPlay = {
+                                                item.episode?.id?.let { id ->
+                                                    context.startService(
+                                                        PlaybackService.playEpisodeIntent(context, id)
+                                                    )
+                                                }
+                                            }
                                         )
                                     }
                                 }
@@ -218,6 +228,7 @@ fun QueueScreen(
 private fun QueueItemRow(
     item: QueueItem,
     dragHandleModifier: Modifier,
+    onPlay: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val episode = item.episode
@@ -227,6 +238,7 @@ private fun QueueItemRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clickable(onClickLabel = "Play episode", onClick = onPlay)
             .padding(vertical = 8.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

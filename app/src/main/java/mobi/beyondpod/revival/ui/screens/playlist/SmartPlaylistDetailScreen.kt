@@ -60,6 +60,8 @@ import mobi.beyondpod.revival.data.local.entity.RuleField
 import mobi.beyondpod.revival.data.local.entity.RuleOperator
 import mobi.beyondpod.revival.data.local.entity.SmartPlaylistBlock
 import mobi.beyondpod.revival.data.local.entity.SmartPlaylistRule
+import androidx.compose.ui.platform.LocalContext
+import mobi.beyondpod.revival.service.PlaybackService
 import mobi.beyondpod.revival.ui.components.EpisodeListItem
 import mobi.beyondpod.revival.ui.navigation.Screen
 
@@ -82,6 +84,7 @@ fun SmartPlaylistDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val episodes by viewModel.evaluatedEpisodes.collectAsState()
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
@@ -143,6 +146,11 @@ fun SmartPlaylistDetailScreen(
                                 onBuildQueue = {
                                     viewModel.buildQueueSnapshot()
                                     navController.navigate(Screen.Queue.route)
+                                },
+                                onEpisodeClick = { id ->
+                                    context.startService(
+                                        PlaybackService.playEpisodeIntent(context, id)
+                                    )
                                 }
                             )
                             1 -> EditorTab(viewModel = viewModel, isDefault = state.playlist.isDefault)
@@ -160,7 +168,8 @@ fun SmartPlaylistDetailScreen(
 private fun EpisodesTab(
     episodes: List<mobi.beyondpod.revival.data.local.entity.EpisodeEntity>,
     isDefault: Boolean,
-    onBuildQueue: () -> Unit
+    onBuildQueue: () -> Unit,
+    onEpisodeClick: (Long) -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
@@ -207,6 +216,7 @@ private fun EpisodesTab(
             itemsIndexed(episodes, key = { _, ep -> ep.id }) { _, episode ->
                 EpisodeListItem(
                     episode = episode,
+                    onClick = { onEpisodeClick(episode.id) },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
                 )
                 HorizontalDivider(modifier = Modifier.padding(start = 76.dp), thickness = 0.5.dp)

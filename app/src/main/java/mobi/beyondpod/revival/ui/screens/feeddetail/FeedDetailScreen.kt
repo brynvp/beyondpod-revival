@@ -23,6 +23,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.platform.LocalContext
+import mobi.beyondpod.revival.service.PlaybackService
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,6 +76,7 @@ fun FeedDetailScreen(
 ) {
     val uiState      by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val context      = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -149,7 +152,15 @@ fun FeedDetailScreen(
                                 onRefresh    = viewModel::refresh,
                                 modifier     = Modifier.weight(1f)
                             ) {
-                                EpisodesTab(state = state)
+                                EpisodesTab(
+                                    state = state,
+                                    onEpisodeClick = { episodeId ->
+                                        context.startService(
+                                            PlaybackService.playEpisodeIntent(context, episodeId)
+                                        )
+                                    },
+                                    onDownloadClick = viewModel::downloadEpisode
+                                )
                             }
                             1 -> SettingsTab(feed = state.feed)
                         }
@@ -188,7 +199,11 @@ fun FeedDetailScreen(
 }
 
 @Composable
-private fun EpisodesTab(state: FeedDetailUiState.Success) {
+private fun EpisodesTab(
+    state: FeedDetailUiState.Success,
+    onEpisodeClick: (Long) -> Unit,
+    onDownloadClick: (Long) -> Unit
+) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         // Feed header
         item {
@@ -211,6 +226,8 @@ private fun EpisodesTab(state: FeedDetailUiState.Success) {
             items(items = state.episodes, key = { it.id }) { episode ->
                 EpisodeListItem(
                     episode = episode,
+                    onClick = { onEpisodeClick(episode.id) },
+                    onDownloadClick = { onDownloadClick(episode.id) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp)

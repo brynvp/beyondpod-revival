@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
+import mobi.beyondpod.revival.domain.usecase.download.EnqueueDownloadUseCase
 import mobi.beyondpod.revival.domain.usecase.episode.ClearMyEpisodesUseCase
 import mobi.beyondpod.revival.domain.usecase.episode.GetMyEpisodesUseCase
 import mobi.beyondpod.revival.domain.usecase.episode.RemoveFromMyEpisodesUseCase
@@ -50,7 +51,8 @@ class MyEpisodesViewModel @Inject constructor(
     private val removeFromMyEpisodesUseCase: RemoveFromMyEpisodesUseCase,
     private val clearMyEpisodesUseCase: ClearMyEpisodesUseCase,
     private val buildMyEpisodesQueueUseCase: BuildMyEpisodesQueueUseCase,
-    private val episodeRepository: EpisodeRepository
+    private val episodeRepository: EpisodeRepository,
+    private val enqueueDownloadUseCase: EnqueueDownloadUseCase
 ) : ViewModel() {
 
     // ── Rule 1 + 4: live from ManualPlaylistEpisodeCrossRef, not from SmartPlaylist eval ──
@@ -109,6 +111,10 @@ class MyEpisodesViewModel @Inject constructor(
         viewModelScope.launch {
             clearMyEpisodesUseCase()
         }
+    }
+
+    fun downloadEpisode(episodeId: Long) {
+        viewModelScope.launch { enqueueDownloadUseCase(episodeId) }
     }
 
     // ── Rule 3: NO deletePlaylist() method exposed — My Episodes is indestructible ──

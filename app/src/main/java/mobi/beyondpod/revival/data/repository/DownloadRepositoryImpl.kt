@@ -1,5 +1,10 @@
 package mobi.beyondpod.revival.data.repository
 
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import kotlinx.coroutines.flow.Flow
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
@@ -7,23 +12,30 @@ import mobi.beyondpod.revival.data.local.entity.DownloadQueueEntity
 import mobi.beyondpod.revival.data.local.entity.DownloadStateEnum
 import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
+import mobi.beyondpod.revival.service.DownloadWorker
 import java.io.File
 import javax.inject.Inject
 
 class DownloadRepositoryImpl @Inject constructor(
     private val episodeDao: EpisodeDao,
-    private val feedDao: FeedDao
+    private val feedDao: FeedDao,
+    private val workManager: WorkManager
 ) : DownloadRepository {
 
     override suspend fun enqueueDownload(episodeId: Long) {
-        // Mark episode as QUEUED. WorkManager job creation is handled by
-        // DownloadWorker in Phase 3; this persists the intent to the DB.
         episodeDao.updateDownloadState(episodeId, DownloadStateEnum.QUEUED, null)
+        workManager.enqueueUniqueWork(
+            "download_$episodeId",
+            ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<DownloadWorker>()
+                .setInputData(workDataOf(DownloadWorker.KEY_EPISODE_ID to episodeId))
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .build()
+        )
     }
 
     override suspend fun cancelDownload(episodeId: Long) {
-        // WorkManager cancellation happens in Phase 3 via the downloadId tag.
-        // Reset state so the episode can be re-downloaded.
+        workManager.cancelUniqueWork("download_$episodeId")
         episodeDao.updateDownloadState(episodeId, DownloadStateEnum.NOT_DOWNLOADED, null)
     }
 
@@ -104,22 +116,17 @@ class DownloadRepositoryImpl @Inject constructor(
 
                 // ── Step 2: Enqueue new downloads ─────────────────────────
                 val toDownload = episodeDao.getNotDownloadedNewest(feedId, downloadCount)
-                toDownload.forEach { ep ->
-                    episodeDao.updateDownloadState(ep.id, DownloadStateEnum.QUEUED, null)
-                    // Phase 3: WorkManager.enqueue(DownloadWorker, ep.id)
-                }
+                toDownload.forEach { ep -> enqueueDownload(ep.id) }
             }
 
             DownloadStrategy.DOWNLOAD_IN_ORDER -> {
                 // No automatic cleanup for serial content
                 val toDownload = episodeDao.getNotDownloadedOldest(feedId, downloadCount)
-                toDownload.forEach { ep ->
-                    episodeDao.updateDownloadState(ep.id, DownloadStateEnum.QUEUED, null)
-                }
+                toDownload.forEach { ep -> enqueueDownload(ep.id) }
             }
 
             DownloadStrategy.STREAM_NEWEST -> {
-                // No file download; just ensure QUEUED state so PlaybackService can stream
+                // No file download — stream only; mark QUEUED so PlaybackService streams
                 val toQueue = episodeDao.getNotDownloadedNewest(feedId, downloadCount)
                 toQueue.forEach { ep ->
                     episodeDao.updateDownloadState(ep.id, DownloadStateEnum.QUEUED, null)
@@ -142,7 +149,9 @@ class DownloadRepositoryImpl @Inject constructor(
             }
 
             DownloadStrategy.GLOBAL -> {
-                // Defer to global settings — handled by FeedUpdateWorker in Phase 3
+                // Treat the same as DOWNLOAD_NEWEST with default count
+                val toDownload = episodeDao.getNotDownloadedNewest(feedId, downloadCount)
+                toDownload.forEach { ep -> enqueueDownload(ep.id) }
             }
         }
     }

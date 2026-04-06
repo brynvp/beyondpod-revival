@@ -1,6 +1,7 @@
 package mobi.beyondpod.revival.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,6 +57,8 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun EpisodeListItem(
     episode: EpisodeEntity,
+    onClick: () -> Unit,
+    onDownloadClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val borderColor = when (episode.playState) {
@@ -68,6 +72,7 @@ fun EpisodeListItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clickable(onClickLabel = "Play ${episode.title}", onClick = onClick)
             .alpha(alpha)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -172,7 +177,21 @@ fun EpisodeListItem(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(16.dp)
                 )
-                else -> {}
+                else -> {
+                    if (onDownloadClick != null) {
+                        IconButton(
+                            onClick = onDownloadClick,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Download episode",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
 

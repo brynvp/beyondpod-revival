@@ -163,6 +163,12 @@ fun MyEpisodesScreen(
                                 ) {
                                     EpisodeListItem(
                                         episode = episode,
+                                        onClick = {
+                                            context.startService(
+                                                PlaybackService.playEpisodeIntent(context, episode.id)
+                                            )
+                                        },
+                                        onDownloadClick = { viewModel.downloadEpisode(episode.id) },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 12.dp)
