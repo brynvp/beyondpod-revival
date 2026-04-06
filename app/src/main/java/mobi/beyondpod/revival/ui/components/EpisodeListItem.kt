@@ -97,7 +97,7 @@ fun EpisodeListItem(
             if (artUrl != null) {
                 AsyncImage(
                     model = artUrl,
-                    contentDescription = null,
+                    contentDescription = "${episode.title} artwork",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxHeight()
                 )

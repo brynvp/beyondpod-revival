@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -30,7 +29,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -48,44 +51,48 @@ import mobi.beyondpod.revival.data.local.entity.CategoryEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.ui.navigation.Screen
 
-/**
- * Feed list screen — shows all subscribed feeds grouped by category.
- *
- * Each category row is expandable/collapsible. Feeds with no primary category
- * appear under an implicit "Uncategorized" group.
- *
- * Tapping a feed navigates to [Screen.FeedEpisodes] (FeedDetailScreen).
- * FAB navigates to [Screen.AddFeed].
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedListScreen(
     navController: NavController,
     viewModel: FeedListViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState      by viewModel.uiState.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Feeds", fontWeight = FontWeight.SemiBold) })
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { navController.navigate(Screen.AddFeed.route) }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Podcast")
+            FloatingActionButton(
+                onClick = { navController.navigate(Screen.AddFeed.route) },
+                modifier = Modifier.semantics { contentDescription = "Add podcast" }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = viewModel::refresh,
+            modifier     = Modifier.padding(innerPadding)
+        ) {
             when (val state = uiState) {
                 is FeedListUiState.Loading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(modifier = Modifier.semantics {
+                            contentDescription = "Loading feeds"
+                        })
                     }
                 }
 
                 is FeedListUiState.Error -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(state.message)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(state.message, style = MaterialTheme.typography.bodyMedium)
+                            TextButton(onClick = viewModel::refresh) { Text("Retry") }
+                        }
                     }
                 }
 
@@ -97,7 +104,7 @@ fun FeedListScreen(
                             for (group in state.groups) {
                                 item(key = "header_${group.category?.id ?: "uncategorized"}") {
                                     CategoryHeader(
-                                        group = group,
+                                        group    = group,
                                         onToggle = { viewModel.toggleCategory(group.category?.id) }
                                     )
                                     HorizontalDivider(thickness = 0.5.dp)
@@ -106,10 +113,10 @@ fun FeedListScreen(
                                 if (group.isExpanded) {
                                     items(
                                         items = group.feeds,
-                                        key = { "feed_${it.id}" }
+                                        key   = { "feed_${it.id}" }
                                     ) { feed ->
                                         FeedRow(
-                                            feed = feed,
+                                            feed    = feed,
                                             onClick = {
                                                 navController.navigate(
                                                     Screen.FeedEpisodes.createRoute(feed.id)
@@ -117,7 +124,7 @@ fun FeedListScreen(
                                             }
                                         )
                                         HorizontalDivider(
-                                            modifier = Modifier.padding(start = 72.dp),
+                                            modifier  = Modifier.padding(start = 72.dp),
                                             thickness = 0.5.dp
                                         )
                                     }
@@ -137,15 +144,16 @@ private fun CategoryHeader(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val category = group.category
+    val label = "${category?.name ?: "Uncategorized"}, ${group.feeds.size} feed${if (group.feeds.size == 1) "" else "s"}, ${if (group.isExpanded) "expanded" else "collapsed"}"
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onToggle)
+            .clickable(onClickLabel = if (group.isExpanded) "Collapse category" else "Expand category", onClick = onToggle)
+            .semantics { contentDescription = label }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Color indicator or folder icon
-        val category = group.category
         if (category != null) {
             Box(
                 modifier = Modifier
@@ -155,32 +163,29 @@ private fun CategoryHeader(
             Spacer(Modifier.width(12.dp))
         } else {
             Icon(
-                imageVector = Icons.Default.Folder,
+                imageVector    = Icons.Default.Folder,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                modifier       = Modifier.size(18.dp),
+                tint           = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
             Spacer(Modifier.width(8.dp))
         }
 
         Text(
-            text = category?.name ?: "Uncategorized",
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+            text     = category?.name ?: "Uncategorized",
+            style    = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
             modifier = Modifier.weight(1f)
         )
-
         Text(
-            text = "${group.feeds.size}",
+            text  = "${group.feeds.size}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         )
-
         Spacer(Modifier.width(8.dp))
-
         Icon(
-            imageVector = if (group.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-            contentDescription = if (group.isExpanded) "Collapse" else "Expand",
-            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            imageVector    = if (group.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = null,  // described by semantics above
+            tint           = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
     }
 }
@@ -194,11 +199,10 @@ private fun FeedRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClickLabel = "Open ${feed.title}", onClick = onClick)
             .padding(start = 36.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Feed artwork (50dp circle)
         Box(
             modifier = Modifier
                 .size(50.dp)
@@ -207,27 +211,25 @@ private fun FeedRow(
         ) {
             if (feed.imageUrl != null) {
                 AsyncImage(
-                    model = feed.imageUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    model              = feed.imageUrl,
+                    contentDescription = "${feed.title} artwork",
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier.fillMaxSize()
                 )
             }
         }
-
         Spacer(Modifier.width(14.dp))
-
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = feed.title,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                text     = feed.title,
+                style    = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                 maxLines = 1
             )
             if (feed.author.isNotEmpty()) {
                 Text(
-                    text = feed.author,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    text     = feed.author,
+                    style    = MaterialTheme.typography.bodySmall,
+                    color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     maxLines = 1
                 )
             }
@@ -239,13 +241,8 @@ private fun FeedRow(
 private fun EmptyFeedList(onAddFeed: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "No podcasts yet",
-                style = MaterialTheme.typography.titleMedium
-            )
-            androidx.compose.material3.TextButton(onClick = onAddFeed) {
-                Text("Add your first podcast")
-            }
+            Text("No podcasts yet", style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = onAddFeed) { Text("Add your first podcast") }
         }
     }
 }

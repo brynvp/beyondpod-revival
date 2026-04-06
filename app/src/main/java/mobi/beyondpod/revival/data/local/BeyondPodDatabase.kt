@@ -1,8 +1,12 @@
 package mobi.beyondpod.revival.data.local
 
+import android.content.Context
 import androidx.room.Database
+import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import mobi.beyondpod.revival.data.local.converter.Converters
 import mobi.beyondpod.revival.data.local.dao.CategoryDao
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
@@ -40,7 +44,7 @@ import mobi.beyondpod.revival.data.local.entity.SyncStateEntity
         ChangeHistoryEntity::class,           // Subscription change log (gPodder sync diffs)
         ScheduledTaskEntity::class            // User-defined scheduled update tasks
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -54,5 +58,35 @@ abstract class BeyondPodDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "beyondpod.db"
+
+        // ── Migration 1 → 2: add mandatory compound indices (§13) ────────────────
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Compound indices for episodes (feed-scoped queries)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_feedId_pubDate` ON `episodes` (`feedId`, `pubDate`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_feedId_playState` ON `episodes` (`feedId`, `playState`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_feedId_downloadState` ON `episodes` (`feedId`, `downloadState`)")
+                // Compound index for ordered snapshot reads
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_queue_snapshot_items_snapshotId_position` ON `queue_snapshot_items` (`snapshotId`, `position`)")
+                // Simple indices on feeds
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_feeds_primaryCategoryId` ON `feeds` (`primaryCategoryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_feeds_downloadStrategy` ON `feeds` (`downloadStrategy`)")
+            }
+        }
+
+        /**
+         * Singleton accessor for non-Hilt contexts (e.g., widget [RemoteViewsFactory]).
+         * Hilt's [DatabaseModule] uses [MIGRATION_1_2] via [addMigrations]; this accessor does too.
+         */
+        @Volatile private var widgetInstance: BeyondPodDatabase? = null
+
+        fun getInstance(context: Context): BeyondPodDatabase =
+            widgetInstance ?: synchronized(this) {
+                widgetInstance ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    BeyondPodDatabase::class.java,
+                    DATABASE_NAME
+                ).addMigrations(MIGRATION_1_2).build().also { widgetInstance = it }
+            }
     }
 }

@@ -20,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
+import mobi.beyondpod.revival.widget.PlaybackWidgetState
 import javax.inject.Inject
 
 /**
@@ -56,6 +57,11 @@ class PlaybackService : MediaSessionService() {
         const val EXTRA_SLEEP_DURATION_MS   = "sleep_duration_ms"
         /** Use this key when building MediaItems: set mediaId = episodeId.toString() */
         const val MEDIA_ID_KEY              = "episode_id"
+
+        // Widget control actions (received from PlayerWidgetProvider button taps)
+        const val ACTION_TOGGLE_PLAYBACK = "mobi.beyondpod.revival.TOGGLE_PLAYBACK"
+        const val ACTION_SKIP_BACK       = "mobi.beyondpod.revival.SKIP_BACK"
+        const val ACTION_SKIP_FORWARD    = "mobi.beyondpod.revival.SKIP_FORWARD"
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -94,6 +100,9 @@ class PlaybackService : MediaSessionService() {
                 if (ms > 0) startSleepTimer(ms)
             }
             ACTION_CANCEL_SLEEP_TIMER -> cancelSleepTimer()
+            ACTION_TOGGLE_PLAYBACK -> if (player.isPlaying) player.pause() else player.play()
+            ACTION_SKIP_BACK       -> player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0))
+            ACTION_SKIP_FORWARD    -> player.seekTo(player.currentPosition + 30_000L)
         }
         return START_STICKY
     }
@@ -159,6 +168,31 @@ class PlaybackService : MediaSessionService() {
         positionSaveJob = null
     }
 
+    // ── Widget state bridge ───────────────────────────────────────────────────
+
+    /**
+     * Write current playback state to SharedPreferences and broadcast a widget update.
+     * Called on every play/pause toggle and on episode transitions.
+     */
+    private fun notifyWidget(isPlaying: Boolean) {
+        serviceScope.launch(Dispatchers.IO) {
+            val episode = if (currentEpisodeId > 0) {
+                episodeRepository.getEpisodeById(currentEpisodeId)
+            } else null
+            PlaybackWidgetState.write(
+                context      = this@PlaybackService,
+                episodeId    = currentEpisodeId,
+                episodeTitle = episode?.title ?: "",
+                feedTitle    = "",  // feed title resolved lazily in the widget
+                artUrl       = episode?.imageUrl,
+                isPlaying    = isPlaying
+            )
+            sendBroadcast(Intent(PlaybackWidgetState.ACTION_WIDGET_UPDATE).apply {
+                setPackage(packageName)
+            })
+        }
+    }
+
     // ── Player event listener ─────────────────────────────────────────────────
 
     private val playerListener = object : Player.Listener {
@@ -178,11 +212,12 @@ class PlaybackService : MediaSessionService() {
                     }
                 }
             }
+            notifyWidget(isPlaying)
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            // Episode id is stored as the mediaId string when the MediaItem was built
             currentEpisodeId = mediaItem?.mediaId?.toLongOrNull() ?: -1L
+            notifyWidget(player.isPlaying)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {

@@ -17,7 +17,11 @@ import androidx.room.PrimaryKey
         Index("feedId"),
         Index("guid"),
         Index("pubDate"),
-        Index("playState")
+        Index("playState"),
+        // Compound indices for efficient feed-scoped queries (§13 mandatory)
+        Index(value = ["feedId", "pubDate"]),
+        Index(value = ["feedId", "playState"]),
+        Index(value = ["feedId", "downloadState"])
     ]
 )
 data class EpisodeEntity(

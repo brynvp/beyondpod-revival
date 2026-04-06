@@ -1,9 +1,16 @@
 package mobi.beyondpod.revival.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "feeds")
+@Entity(
+    tableName = "feeds",
+    indices = [
+        Index("primaryCategoryId"),   // §13 mandatory — feeds by category look-up
+        Index("downloadStrategy")     // §13 mandatory — batch download strategy scans
+    ]
+)
 data class FeedEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val url: String,                          // Canonical RSS/Atom URL

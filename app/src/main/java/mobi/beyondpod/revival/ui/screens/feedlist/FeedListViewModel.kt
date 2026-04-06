@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.local.entity.CategoryEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.repository.CategoryRepository
@@ -41,8 +42,9 @@ class FeedListViewModel @Inject constructor(
     private val categoryRepository: CategoryRepository
 ) : ViewModel() {
 
-    // Using a sentinel Long for "Uncategorized" collapsed tracking
-    private val collapsedIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val collapsedIds    = MutableStateFlow<Set<Long>>(emptySet())
+    private val _isRefreshing   = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
     private val UNCATEGORIZED_SENTINEL = -1L
 
     val uiState: StateFlow<FeedListUiState> = combine(
@@ -56,6 +58,14 @@ class FeedListViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = FeedListUiState.Loading
     )
+
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            feedRepository.refreshAllFeeds()
+            _isRefreshing.value = false
+        }
+    }
 
     fun toggleCategory(categoryId: Long?) {
         val key = categoryId ?: UNCATEGORIZED_SENTINEL

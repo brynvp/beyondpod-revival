@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -44,6 +45,9 @@ class FeedDetailViewModel @Inject constructor(
 
     val feedId: Long = checkNotNull(savedStateHandle[Screen.FeedEpisodes.ARG_FEED_ID])
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
     val uiState: StateFlow<FeedDetailUiState> = combine(
         flow { emit(feedRepository.getFeedById(feedId)) },
         episodeRepository.getEpisodesForFeed(feedId)
@@ -58,6 +62,14 @@ class FeedDetailViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = FeedDetailUiState.Loading
     )
+
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            feedRepository.refreshFeed(feedId)
+            _isRefreshing.value = false
+        }
+    }
 
     /** Mark every episode in this feed as played. */
     fun markAllPlayed() {

@@ -23,6 +23,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,7 +72,8 @@ fun FeedDetailScreen(
     navController: NavController,
     viewModel: FeedDetailViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState      by viewModel.uiState.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -142,7 +144,13 @@ fun FeedDetailScreen(
                         }
 
                         when (selectedTab) {
-                            0 -> EpisodesTab(state = state)
+                            0 -> PullToRefreshBox(
+                                isRefreshing = isRefreshing,
+                                onRefresh    = viewModel::refresh,
+                                modifier     = Modifier.weight(1f)
+                            ) {
+                                EpisodesTab(state = state)
+                            }
                             1 -> SettingsTab(feed = state.feed)
                         }
                     }

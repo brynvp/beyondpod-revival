@@ -23,6 +23,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(app: Application): BeyondPodDatabase =
         Room.databaseBuilder(app, BeyondPodDatabase::class.java, BeyondPodDatabase.DATABASE_NAME)
+            .addMigrations(BeyondPodDatabase.MIGRATION_1_2)
             .build()
 
     @Provides

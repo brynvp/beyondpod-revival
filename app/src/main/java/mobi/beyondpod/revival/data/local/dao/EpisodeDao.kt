@@ -39,6 +39,15 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE localFilePath = :path LIMIT 1")
     suspend fun getEpisodeByLocalPath(path: String): EpisodeEntity?
 
+    // Widget query — recent NEW or IN_PROGRESS episodes, newest first
+    @Query("""
+        SELECT * FROM episodes
+        WHERE playState IN ('NEW', 'IN_PROGRESS')
+        ORDER BY pubDate DESC
+        LIMIT :limit
+    """)
+    suspend fun getRecentUnplayedForWidget(limit: Int): List<EpisodeEntity>
+
     @Upsert
     suspend fun upsertEpisode(episode: EpisodeEntity): Long
 

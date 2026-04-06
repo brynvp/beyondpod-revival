@@ -1,3 +1,20 @@
 <resources>
     <string name="app_name">BeyondPod</string>
+
+    <!-- Widget labels -->
+    <string name="widget_player_label">BeyondPod Player</string>
+    <string name="widget_feed_list_label">BeyondPod Episodes</string>
+    <string name="widget_player_description">Controls playback of the current episode</string>
+    <string name="widget_feed_list_description">Shows recent unplayed episodes</string>
+
+    <!-- Widget content descriptions (accessibility) -->
+    <string name="widget_artwork_desc">Episode artwork</string>
+    <string name="widget_play_pause_desc">Play or pause</string>
+    <string name="widget_skip_back_desc">Skip back</string>
+    <string name="widget_skip_forward_desc">Skip forward</string>
+
+    <!-- Widget placeholder text -->
+    <string name="widget_no_episode">Nothing playing</string>
+    <string name="widget_recent_episodes">RECENT EPISODES</string>
+    <string name="widget_no_episodes">No unplayed episodes</string>
 </resources>

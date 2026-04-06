@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PlayerWidget info — 4 columns × 1 row.
+  Updates are event-driven (ACTION_WIDGET_UPDATE broadcast from PlaybackService);
+  updatePeriodMillis=0 disables periodic update to save battery.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_player_description"
+    android:initialLayout="@layout/widget_player"
+    android:minWidth="250dp"
+    android:minHeight="54dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

@@ -15,7 +15,7 @@ the most capable Android podcast app before it was abandoned. The full specifica
 
 ## Current Build Phase
 
-**PHASE: 7 — Import/Export + Settings complete**
+**PHASE: 8 — Widgets + Polish complete**
 
 Update this line at the start of each session to reflect where you are:
 - Phase 0: Scaffold only (project exists, no feature code)

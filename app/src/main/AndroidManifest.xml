@@ -73,6 +73,43 @@
             </intent-filter>
         </receiver>
 
+        <!-- PlayerWidget — 4×1 playback control widget -->
+        <receiver
+            android:name=".widget.PlayerWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_player_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="mobi.beyondpod.revival.ACTION_WIDGET_UPDATE" />
+                <action android:name="mobi.beyondpod.revival.WIDGET_PLAY_PAUSE" />
+                <action android:name="mobi.beyondpod.revival.WIDGET_SKIP_BACK" />
+                <action android:name="mobi.beyondpod.revival.WIDGET_SKIP_FORWARD" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_player_info" />
+        </receiver>
+
+        <!-- FeedListWidget — scrollable recent episodes widget -->
+        <receiver
+            android:name=".widget.FeedListWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_feed_list_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="mobi.beyondpod.revival.ACTION_FEED_LIST_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_feed_list_info" />
+        </receiver>
+
+        <!-- RemoteViewsService for FeedListWidget ListView -->
+        <service
+            android:name=".widget.FeedListWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <!--
             Disable WorkManager's default auto-initialisation so BeyondPodApp can supply
             its own Configuration (with HiltWorkerFactory) via Configuration.Provider.

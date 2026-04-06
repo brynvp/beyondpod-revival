@@ -26,7 +26,11 @@ import androidx.room.PrimaryKey
         childColumns = ["snapshotId"],
         onDelete = ForeignKey.CASCADE
     )],
-    indices = [Index("snapshotId"), Index("position")]
+    indices = [
+        Index("snapshotId"),
+        Index("position"),
+        Index(value = ["snapshotId", "position"])   // §13: compound for ordered snapshot reads
+    ]
 )
 data class QueueSnapshotItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
