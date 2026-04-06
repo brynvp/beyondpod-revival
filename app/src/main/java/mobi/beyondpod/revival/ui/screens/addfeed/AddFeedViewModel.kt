@@ -5,12 +5,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.domain.usecase.feed.SubscribeToFeedUseCase
+import mobi.beyondpod.revival.service.FeedUpdateWorker
 import javax.inject.Inject
 
 sealed interface AddFeedUiState {
@@ -35,7 +41,8 @@ sealed interface AddFeedUiState {
  */
 @HiltViewModel
 class AddFeedViewModel @Inject constructor(
-    private val subscribeToFeedUseCase: SubscribeToFeedUseCase
+    private val subscribeToFeedUseCase: SubscribeToFeedUseCase,
+    private val workManager: WorkManager
 ) : ViewModel() {
 
     var urlInput by mutableStateOf("")
@@ -76,6 +83,24 @@ class AddFeedViewModel @Inject constructor(
     fun confirmSubscribe() {
         val state = _uiState.value as? AddFeedUiState.Preview ?: return
         _uiState.value = AddFeedUiState.Subscribed(state.feed.id)
+        enqueueImmediateRefresh(state.feed.id)
+    }
+
+    /**
+     * Kick off a one-time [FeedUpdateWorker] for [feedId] so episodes, artwork,
+     * and auto-downloads are populated immediately after the user subscribes.
+     * Expedited so it runs ahead of the periodic all-feeds refresh.
+     */
+    private fun enqueueImmediateRefresh(feedId: Long) {
+        val request = OneTimeWorkRequestBuilder<FeedUpdateWorker>()
+            .setInputData(workDataOf(FeedUpdateWorker.KEY_FEED_ID to feedId))
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+        workManager.enqueueUniqueWork(
+            "subscribe_refresh_$feedId",
+            ExistingWorkPolicy.KEEP,
+            request
+        )
     }
 
     fun reset() {
