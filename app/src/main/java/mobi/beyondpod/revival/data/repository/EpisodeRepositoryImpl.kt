@@ -219,14 +219,14 @@ class EpisodeRepositoryImpl @Inject constructor(
         if (episode.guid.isNotBlank() && episode.guid != episode.url) {
             val byGuid = episodeDao.getEpisodeByGuid(episode.guid, episode.feedId)
             if (byGuid != null) {
-                return episodeDao.upsertEpisode(episode.copy(id = byGuid.id))
+                return episodeDao.upsertEpisode(mergeWithExisting(episode, byGuid))
             }
         }
 
         // Priority 2 — URL
         val byUrl = episodeDao.getEpisodeByUrl(episode.url, episode.feedId)
         if (byUrl != null) {
-            return episodeDao.upsertEpisode(episode.copy(id = byUrl.id))
+            return episodeDao.upsertEpisode(mergeWithExisting(episode, byUrl))
         }
 
         // Priority 3 — Title + Duration heuristic
@@ -235,13 +235,53 @@ class EpisodeRepositoryImpl @Inject constructor(
                 episode.feedId, episode.title, episode.duration
             )
             if (duplicates.isNotEmpty()) {
-                return episodeDao.upsertEpisode(episode.copy(id = duplicates.first().id))
+                return episodeDao.upsertEpisode(mergeWithExisting(episode, duplicates.first()))
             }
         }
 
-        // Priority 4 — New episode
+        // Priority 4 — New episode (no existing record — insert as-is)
         return episodeDao.upsertEpisode(episode)
     }
+
+    /**
+     * Merge RSS-sourced metadata from [incoming] onto the persisted [existing] episode.
+     *
+     * RSS fields (title, description, url, pubDate, duration, imageUrl, etc.) are refreshed
+     * from the feed — the feed XML is the source of truth for these.
+     *
+     * User-controlled fields (playState, downloadState, isStarred, isProtected, localFilePath,
+     * play position, etc.) are ALWAYS preserved from [existing]. A feed refresh must never
+     * reset listening history, download state, or user flags. This was the root cause of
+     * "Recently Played clears on pull-to-refresh" — every upsert was overwriting with defaults.
+     */
+    private fun mergeWithExisting(
+        incoming: EpisodeEntity,
+        existing: EpisodeEntity
+    ): EpisodeEntity = incoming.copy(
+        id                      = existing.id,
+        // ── Preserve all user-controlled play state ──────────────────────────
+        playState               = existing.playState,
+        playPosition            = existing.playPosition,
+        playedFraction          = existing.playedFraction,
+        playCount               = existing.playCount,
+        lastPlayed              = existing.lastPlayed,
+        lastAccessed            = existing.lastAccessed,
+        isStarred               = existing.isStarred,
+        isProtected             = existing.isProtected,
+        isArchived              = existing.isArchived,
+        isInMyEpisodes          = existing.isInMyEpisodes,
+        addedToMyEpisodes       = existing.addedToMyEpisodes,
+        // ── Preserve all download state ──────────────────────────────────────
+        downloadState           = existing.downloadState,
+        localFilePath           = existing.localFilePath,
+        downloadedAt            = existing.downloadedAt,
+        downloadId              = existing.downloadId,
+        downloadProgress        = existing.downloadProgress,
+        downloadBytesDownloaded = existing.downloadBytesDownloaded,
+        downloadTotalBytes      = existing.downloadTotalBytes,
+        // ── Preserve creation timestamp ───────────────────────────────────────
+        createdAt               = existing.createdAt
+    )
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
