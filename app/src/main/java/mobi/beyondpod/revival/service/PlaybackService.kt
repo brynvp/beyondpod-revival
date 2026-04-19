@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
@@ -291,6 +292,13 @@ class PlaybackService : MediaSessionService() {
                     episodeRepository.markPlayed(episodeId)
                 }
             }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            // Stop unconditionally — leaves the player in STATE_IDLE with no automatic retry.
+            // This prevents ACTION_PLAY_EPISODE from being re-fired in a loop on source errors
+            // (cleartext blocked, bad URL, HTTP error, etc.).
+            player.stop()
         }
     }
 }

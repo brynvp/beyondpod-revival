@@ -41,7 +41,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BeyondPod">
+        android:theme="@style/Theme.BeyondPod"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
@@ -109,6 +110,12 @@
             android:name=".widget.FeedListWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <!-- WorkManager's foreground service — must declare type for targetSdk 36 -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <!--
             Disable WorkManager's default auto-initialisation so BeyondPodApp can supply

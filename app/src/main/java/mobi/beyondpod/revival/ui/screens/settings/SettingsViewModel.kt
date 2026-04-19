@@ -5,13 +5,20 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.settings.AppSettings
+import mobi.beyondpod.revival.service.FeedUpdateWorker
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 data class SettingsUiState(
@@ -68,7 +75,8 @@ data class SettingsUiState(
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
+    private val workManager: WorkManager
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = dataStore.data.map { prefs ->
@@ -129,8 +137,25 @@ class SettingsViewModel @Inject constructor(
     fun setPauseOnNotification(v: Boolean)    = set { it[AppSettings.PAUSE_ON_NOTIFICATION] = v }
     fun setContinuousPlayback(v: Boolean)     = set { it[AppSettings.CONTINUOUS_PLAYBACK] = v }
 
-    fun setAutoUpdateEnabled(v: Boolean)  = set { it[AppSettings.AUTO_UPDATE_ENABLED] = v }
-    fun setUpdateIntervalHours(v: Int)    = set { it[AppSettings.UPDATE_INTERVAL_HOURS] = v }
+    fun setAutoUpdateEnabled(v: Boolean) {
+        set { it[AppSettings.AUTO_UPDATE_ENABLED] = v }
+        viewModelScope.launch {
+            if (v) {
+                val hours = dataStore.data.first()[AppSettings.UPDATE_INTERVAL_HOURS] ?: 4
+                schedulePeriodicUpdate(hours.toLong())
+            } else {
+                workManager.cancelUniqueWork("feed_update_periodic")
+            }
+        }
+    }
+
+    fun setUpdateIntervalHours(v: Int) {
+        set { it[AppSettings.UPDATE_INTERVAL_HOURS] = v }
+        viewModelScope.launch {
+            val enabled = dataStore.data.first()[AppSettings.AUTO_UPDATE_ENABLED] ?: true
+            if (enabled) schedulePeriodicUpdate(v.toLong())
+        }
+    }
     fun setTurnWifiDuringUpdate(v: Boolean) = set { it[AppSettings.TURN_WIFI_DURING_UPDATE] = v }
     fun setUpdateOnWifiOnly(v: Boolean)   = set { it[AppSettings.UPDATE_ON_WIFI_ONLY] = v }
 
@@ -162,6 +187,20 @@ class SettingsViewModel @Inject constructor(
     fun setNotifGpodderSync(v: Boolean)      = set { it[AppSettings.NOTIF_GPODDER_SYNC] = v }
     fun setNotifChargeDownload(v: Boolean)   = set { it[AppSettings.NOTIF_CHARGE_DOWNLOAD] = v }
     fun setNotifPlaylistRebuild(v: Boolean)  = set { it[AppSettings.NOTIF_PLAYLIST_REBUILD] = v }
+
+    private fun schedulePeriodicUpdate(intervalHours: Long) {
+        val request = PeriodicWorkRequestBuilder<FeedUpdateWorker>(
+            repeatInterval = intervalHours,
+            repeatIntervalTimeUnit = TimeUnit.HOURS
+        )
+            .setInputData(workDataOf(FeedUpdateWorker.KEY_FEED_ID to FeedUpdateWorker.ALL_FEEDS))
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            "feed_update_periodic",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request
+        )
+    }
 
     private fun set(block: (MutablePreferences) -> Unit) {
         viewModelScope.launch { dataStore.edit(block) }

@@ -1,6 +1,7 @@
 package mobi.beyondpod.revival.service
 
 import android.content.Context
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -45,14 +46,15 @@ class DownloadWorker @AssistedInject constructor(
 
         val episode = episodeDao.getEpisodeById(episodeId) ?: return Result.failure()
 
-        // Show foreground notification immediately
-        setForeground(buildForegroundInfo(episode.title, 0))
-
-        // Build output path:  .../podcasts/<feedId>/<safeTitle>.mp3
+        // Build output path: .../podcasts/<feedId>/<safeTitle>.<ext>
+        // Preserve the original file extension from the URL rather than hardcoding .mp3,
+        // so AAC / OGG / M4A episodes are stored and identified correctly.
         val safeTitle = episode.title.take(64).replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
+        val ext = episode.url.substringAfterLast('.').substringBefore('?').lowercase()
+            .let { if (it.length in 2..4 && it.all { c -> c.isLetter() }) it else "mp3" }
         val outputDir = File(context.getExternalFilesDir(null), "podcasts/${episode.feedId}")
             .also { it.mkdirs() }
-        val outputFile = File(outputDir, "$safeTitle.mp3")
+        val outputFile = File(outputDir, "$safeTitle.$ext")
 
         val resumeFrom = episode.downloadBytesDownloaded.coerceAtLeast(0L)
 
@@ -62,56 +64,62 @@ class DownloadWorker @AssistedInject constructor(
             .build()
 
         return try {
+            // setForeground() is inside the try/catch so a ForegroundServiceStartNotAllowedException
+            // or other system exception is caught and handled rather than silently aborting the worker.
+            setForeground(buildForegroundInfo(episode.title, 0))
             episodeDao.updateDownloadState(episodeId, DownloadStateEnum.DOWNLOADING, null)
 
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful && response.code != 206) {
-                    episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
-                    return if (runAttemptCount < 3) Result.retry() else Result.failure()
-                }
-
-                val body = response.body ?: run {
-                    episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
-                    return Result.failure()
-                }
-
-                // 206 = server honoured Range header → append; 200 = restart from zero
-                val isPartialResume = response.code == 206
-                val bytesAlreadyWritten = if (isPartialResume) resumeFrom else 0L
-                val contentLength = body.contentLength()
-                val totalBytes = if (contentLength > 0) bytesAlreadyWritten + contentLength else 0L
-
-                FileOutputStream(outputFile, /* append= */ isPartialResume).use { out ->
-                    body.byteStream().use { input ->
-                        val buffer = ByteArray(8 * 1024)
-                        var bytesWritten = bytesAlreadyWritten
-                        var read: Int
-                        while (input.read(buffer).also { read = it } != -1) {
-                            out.write(buffer, 0, read)
-                            bytesWritten += read
-                            // Persist resume point every ~512 KB to limit DB writes
-                            if (bytesWritten % (512 * 1024) < buffer.size) {
-                                episodeDao.updateDownloadProgress(episodeId, bytesWritten)
-                            }
-                            val progress = if (totalBytes > 0) {
-                                (bytesWritten * 100 / totalBytes).toInt().coerceIn(0, 100)
-                            } else 0
-                            setForeground(buildForegroundInfo(episode.title, progress))
-                        }
-                        // Final bytes-downloaded persist
-                        episodeDao.updateDownloadProgress(episodeId, bytesWritten)
+            // Run blocking OkHttp I/O on the IO dispatcher — keeps Default thread pool free.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful && response.code != 206) {
+                        episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
+                        return@withContext if (runAttemptCount < 3) Result.retry() else Result.failure()
                     }
-                }
 
-                // Use actual on-disk file size, not Content-Length (which may be absent or wrong)
-                episodeDao.updateDownloadComplete(
-                    episodeId,
-                    DownloadStateEnum.DOWNLOADED,
-                    outputFile.absolutePath,
-                    outputFile.length()
-                )
+                    val body = response.body ?: run {
+                        episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
+                        return@withContext Result.failure()
+                    }
+
+                    // 206 = server honoured Range header → append; 200 = restart from zero
+                    val isPartialResume = response.code == 206
+                    val bytesAlreadyWritten = if (isPartialResume) resumeFrom else 0L
+                    val contentLength = body.contentLength()
+                    val totalBytes = if (contentLength > 0) bytesAlreadyWritten + contentLength else 0L
+
+                    FileOutputStream(outputFile, /* append= */ isPartialResume).use { out ->
+                        body.byteStream().use { input ->
+                            val buffer = ByteArray(8 * 1024)
+                            var bytesWritten = bytesAlreadyWritten
+                            var read: Int
+                            while (input.read(buffer).also { read = it } != -1) {
+                                out.write(buffer, 0, read)
+                                bytesWritten += read
+                                // Persist resume point every ~512 KB to limit DB writes
+                                if (bytesWritten % (512 * 1024) < buffer.size) {
+                                    episodeDao.updateDownloadProgress(episodeId, bytesWritten)
+                                }
+                                val progress = if (totalBytes > 0) {
+                                    (bytesWritten * 100 / totalBytes).toInt().coerceIn(0, 100)
+                                } else 0
+                                setForeground(buildForegroundInfo(episode.title, progress))
+                            }
+                            // Final bytes-downloaded persist
+                            episodeDao.updateDownloadProgress(episodeId, bytesWritten)
+                        }
+                    }
+
+                    // Use actual on-disk file size, not Content-Length (which may be absent or wrong)
+                    episodeDao.updateDownloadComplete(
+                        episodeId,
+                        DownloadStateEnum.DOWNLOADED,
+                        outputFile.absolutePath,
+                        outputFile.length()
+                    )
+                    Result.success()
+                }
             }
-            Result.success()
         } catch (e: Exception) {
             episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
             if (runAttemptCount < 3) Result.retry() else Result.failure()
@@ -128,6 +136,6 @@ class DownloadWorker @AssistedInject constructor(
             .setOngoing(true)
             .setSilent(true)
             .build()
-        return ForegroundInfo(NOTIFICATION_ID, notification)
+        return ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 }

@@ -1,6 +1,7 @@
 package mobi.beyondpod.revival.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
 import mobi.beyondpod.revival.data.local.dao.ManualPlaylistDao
@@ -39,6 +40,17 @@ class EpisodeRepositoryImpl @Inject constructor(
 
     override fun searchEpisodes(query: String): Flow<List<EpisodeEntity>> =
         episodeDao.searchEpisodes(query)
+
+    // ── What to Play sections ─────────────────────────────────────────────────
+
+    override fun getRecentDownloads(limit: Int): Flow<List<EpisodeEntity>> =
+        episodeDao.getDownloadedEpisodes().map { it.take(limit) }
+
+    override fun getRecentlyPlayed(limit: Int): Flow<List<EpisodeEntity>> =
+        episodeDao.getRecentlyPlayed(limit)
+
+    override fun getStarredEpisodes(limit: Int): Flow<List<EpisodeEntity>> =
+        episodeDao.getStarredEpisodes().map { it.take(limit) }
 
     // ── My Episodes ───────────────────────────────────────────────────────────
 

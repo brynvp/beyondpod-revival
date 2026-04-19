@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.CircularProgressIndicator
@@ -22,19 +21,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,24 +35,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.service.PlaybackService
 import mobi.beyondpod.revival.ui.components.EpisodeListItem
 import mobi.beyondpod.revival.ui.navigation.Screen
 
 /**
- * My Episodes screen — the default landing screen.
+ * "What to Play" landing screen.
  *
- * Displays the user's manually-curated episode queue. Reflects all 5 §7.5 behavioural
- * rules via [MyEpisodesViewModel]. My Episodes is NOT a regular SmartPlaylist view.
+ * Shows three auto-populated sections:
+ *   Latest Downloads  — 5 most recently downloaded episodes (ready to play immediately)
+ *   Recently Played   — 5 episodes in IN_PROGRESS or PLAYED state
+ *   Starred           — up to 50 starred/favourite episodes
  *
- * Header actions:
- *   ▶ Play All — builds QueueSnapshotEntity from current order, starts PlaybackService
- *   ⇄ Shuffle — builds snapshot in random order (does NOT reorder My Episodes itself)
- *   ✕ Clear   — clears ManualPlaylistEpisodeCrossRef + deactivates active snapshot
- *
- * Swipe-to-dismiss: removes episode from My Episodes (sets isInMyEpisodes = false).
- * Drag-to-reorder: wired in Phase 6.
+ * No manual curation required. Content appears automatically once the user
+ * has subscriptions and has downloaded or played episodes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,25 +57,16 @@ fun MyEpisodesScreen(
     viewModel: MyEpisodesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val feedImageUrls by viewModel.feedImageUrls.collectAsState()
+    val feedTitles by viewModel.feedTitles.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
-    androidx.compose.material3.Scaffold(
+    Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("My Episodes", fontWeight = FontWeight.SemiBold)
-                        if (uiState is MyEpisodesUiState.Success) {
-                            val count = (uiState as MyEpisodesUiState.Success).episodes.size
-                            Text(
-                                text = "$count episode${if (count == 1) "" else "s"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                    }
+                    Text("What to Play", fontWeight = FontWeight.SemiBold)
                 },
                 actions = {
                     // Play All
@@ -103,24 +83,15 @@ fun MyEpisodesScreen(
                     }) {
                         Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
                     }
-                    // Clear Queue
-                    IconButton(onClick = {
-                        scope.launch {
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Clear My Episodes?",
-                                actionLabel = "Clear"
-                            )
-                            if (result == SnackbarResult.ActionPerformed) viewModel.clearQueue()
-                        }
-                    }) {
-                        Icon(Icons.Default.ClearAll, contentDescription = "Clear Queue")
-                    }
                 }
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.padding(innerPadding)
+        ) {
             when (val state = uiState) {
                 is MyEpisodesUiState.Loading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -135,49 +106,43 @@ fun MyEpisodesScreen(
                 }
 
                 is MyEpisodesUiState.Success -> {
-                    if (state.episodes.isEmpty()) {
-                        EmptyMyEpisodes(
-                            onAddMore = { navController.navigate(Screen.AddFeed.route) }
+                    if (state.sections.isEmpty()) {
+                        EmptyWhatToPlay(
+                            onAddFeed = { navController.navigate(Screen.AddFeed.route) }
                         )
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(
-                                items = state.episodes,
-                                key = { it.id }
-                            ) { episode ->
-                                val dismissState = rememberSwipeToDismissBoxState(
-                                    confirmValueChange = { value ->
-                                        if (value == SwipeToDismissBoxValue.EndToStart ||
-                                            value == SwipeToDismissBoxValue.StartToEnd
-                                        ) {
-                                            viewModel.removeEpisode(episode.id)
-                                            true
-                                        } else false
-                                    }
-                                )
+                            state.sections.forEach { section ->
+                                // Section header
+                                item(key = "header_${section.title}") {
+                                    SectionHeader(title = section.title)
+                                }
 
-                                SwipeToDismissBox(
-                                    state = dismissState,
-                                    backgroundContent = { /* tinted background — Phase 6 */ },
-                                    modifier = Modifier.animateItem()
-                                ) {
+                                // Episode rows
+                                items(
+                                    items = section.episodes,
+                                    key = { "${section.title}_${it.id}" }
+                                ) { episode ->
                                     EpisodeListItem(
                                         episode = episode,
                                         onClick = {
                                             context.startService(
                                                 PlaybackService.playEpisodeIntent(context, episode.id)
                                             )
+                                            navController.navigate(Screen.FullPlayer.route)
                                         },
                                         onDownloadClick = { viewModel.downloadEpisode(episode.id) },
+                                        feedImageUrl = feedImageUrls[episode.feedId],
+                                        feedTitle = feedTitles[episode.feedId],
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 12.dp)
                                     )
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 76.dp),
+                                        thickness = 0.5.dp
+                                    )
                                 }
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(start = 76.dp),
-                                    thickness = 0.5.dp
-                                )
                             }
                         }
                     }
@@ -188,17 +153,29 @@ fun MyEpisodesScreen(
 }
 
 @Composable
-private fun EmptyMyEpisodes(onAddMore: () -> Unit) {
+private fun SectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    )
+}
+
+@Composable
+private fun EmptyWhatToPlay(onAddFeed: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "My Episodes is empty",
+                text = "Nothing to play yet",
                 style = MaterialTheme.typography.titleMedium
             )
-            androidx.compose.material3.TextButton(onClick = onAddMore) {
+            androidx.compose.material3.TextButton(onClick = onAddFeed) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.width(4.dp))
-                    Text("Add a podcast to get started")
+                    Text("Subscribe to a podcast to get started")
                 }
             }
         }

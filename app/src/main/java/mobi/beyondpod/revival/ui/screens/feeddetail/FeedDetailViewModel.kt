@@ -11,12 +11,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import mobi.beyondpod.revival.data.local.entity.CategoryEntity
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
+import mobi.beyondpod.revival.data.repository.CategoryRepository
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
 import mobi.beyondpod.revival.domain.usecase.download.EnqueueDownloadUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.DeleteFeedUseCase
+import mobi.beyondpod.revival.domain.usecase.feed.MoveFeedToCategoryUseCase
 import mobi.beyondpod.revival.ui.navigation.Screen
 import javax.inject.Inject
 
@@ -41,14 +44,23 @@ class FeedDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val feedRepository: FeedRepository,
     private val episodeRepository: EpisodeRepository,
+    private val categoryRepository: CategoryRepository,
     private val deleteFeedUseCase: DeleteFeedUseCase,
-    private val enqueueDownloadUseCase: EnqueueDownloadUseCase
+    private val enqueueDownloadUseCase: EnqueueDownloadUseCase,
+    private val moveFeedToCategoryUseCase: MoveFeedToCategoryUseCase
 ) : ViewModel() {
 
     val feedId: Long = checkNotNull(savedStateHandle[Screen.FeedEpisodes.ARG_FEED_ID])
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
+    val categories: StateFlow<List<CategoryEntity>> = categoryRepository.getAllCategories()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
+        )
 
     val uiState: StateFlow<FeedDetailUiState> = combine(
         flow { emit(feedRepository.getFeedById(feedId)) },
@@ -85,6 +97,12 @@ class FeedDetailViewModel @Inject constructor(
     fun updateFeedProperties(feed: FeedEntity) {
         viewModelScope.launch {
             feedRepository.updateFeedProperties(feed)
+        }
+    }
+
+    fun assignCategory(categoryId: Long?) {
+        viewModelScope.launch {
+            moveFeedToCategoryUseCase(feedId, categoryId)
         }
     }
 

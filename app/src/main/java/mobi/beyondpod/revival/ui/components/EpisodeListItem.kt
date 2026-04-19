@@ -59,6 +59,8 @@ fun EpisodeListItem(
     episode: EpisodeEntity,
     onClick: () -> Unit,
     onDownloadClick: (() -> Unit)? = null,
+    feedImageUrl: String? = null,
+    feedTitle: String? = null,
     modifier: Modifier = Modifier
 ) {
     val borderColor = when (episode.playState) {
@@ -91,8 +93,8 @@ fun EpisodeListItem(
 
         Spacer(Modifier.width(8.dp))
 
-        // Artwork thumbnail
-        val artUrl = episode.imageUrl
+        // Artwork thumbnail — episode art preferred, falls back to feed art
+        val artUrl = episode.imageUrl ?: feedImageUrl
         Box(
             modifier = Modifier
                 .size(56.dp)
@@ -113,6 +115,19 @@ fun EpisodeListItem(
 
         // Text content
         Column(modifier = Modifier.weight(1f)) {
+
+            // Podcast name — above the episode title
+            if (!feedTitle.isNullOrBlank()) {
+                Text(
+                    text = feedTitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+            }
+
             Text(
                 text = episode.title,
                 style = MaterialTheme.typography.bodyLarge.copy(
@@ -121,6 +136,18 @@ fun EpisodeListItem(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+
+            // One-line description preview
+            if (episode.description.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = episode.description.trim(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
             Spacer(Modifier.height(2.dp))
 
@@ -179,15 +206,14 @@ fun EpisodeListItem(
                 )
                 else -> {
                     if (onDownloadClick != null) {
-                        IconButton(
-                            onClick = onDownloadClick,
-                            modifier = Modifier.size(24.dp)
-                        ) {
+                        // Full 48dp touch target per Material guidelines — don't constrain to
+                        // smaller sizes or misses will fire the parent row's onClick (playback).
+                        IconButton(onClick = onDownloadClick) {
                             Icon(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = "Download episode",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

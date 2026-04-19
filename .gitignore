@@ -13,3 +13,15 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+tmp_apk/
+tmp_bpbak/
+dump.py
+Repo/
+.idea/
+.claude/
+QA_REVIEW.md
+icons.txt
+logcat.txt
+logcat_utf8.txt
+schema.txt

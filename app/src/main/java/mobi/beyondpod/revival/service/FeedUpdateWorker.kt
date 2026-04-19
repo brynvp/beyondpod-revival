@@ -6,9 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
-import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
 import mobi.beyondpod.revival.data.repository.DownloadRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
 
@@ -21,10 +19,15 @@ import mobi.beyondpod.revival.data.repository.FeedRepository
  * Step order is MANDATORY (CLAUDE.md rule #8, §9):
  *   1–4  Fetch + parse RSS, dedup, upsert episodes, archive removed   ← Phase 7 wires SAX parser
  *   5    Enforce maxTrackAgeDays                                        ← Phase 7 DAO query
- *   6    Enforce maxEpisodesToKeep — trim oldest downloads              ← LIVE (cleanup BEFORE download)
- *   7    Trigger auto-download                                          ← LIVE
+ *   6    Enforce maxEpisodesToKeep — handled inside autoDownloadNewEpisodes (soft delete, rule #8)
+ *   7    Trigger auto-download (includes cleanup-before-download)       ← LIVE
  *   8    Auto-add to My Episodes                                        ← Phase 4 stub
  *   9    New-episode notification                                       ← Phase 4 stub
+ *
+ * NOTE: Step 6 is intentionally NOT a separate trimOldDownloads() call here.
+ * That DAO method hard-deletes episode records, which destroys play history and starred state.
+ * Retention is handled in DownloadRepositoryImpl.autoDownloadNewEpisodes() via soft-delete
+ * (file removed, downloadState = DELETED, record kept) — cleanup runs before download per rule #8.
  */
 @HiltWorker
 class FeedUpdateWorker @AssistedInject constructor(
@@ -32,7 +35,6 @@ class FeedUpdateWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val feedRepository: FeedRepository,
     private val downloadRepository: DownloadRepository,
-    private val episodeDao: EpisodeDao,
     private val feedDao: FeedDao
 ) : CoroutineWorker(context, params) {
 
@@ -69,20 +71,10 @@ class FeedUpdateWorker @AssistedInject constructor(
         // Full age-based cleanup requires a DAO query keyed on pubDate + maxTrackAgeDays.
         // Wired in Phase 7 alongside the RSS parser. isProtected veto applies.
 
-        // ── Step 6: Enforce maxEpisodesToKeep — CLEANUP BEFORE DOWNLOAD ─────
-        // Runs unconditionally for DOWNLOAD_NEWEST and MANUAL+allowCleanup strategies.
-        // isProtected veto is enforced inside trimOldDownloads (WHERE isProtected = 0).
-        val keepCount = feed.maxEpisodesToKeep
-        if (keepCount != null && keepCount > 0) {
-            val shouldTrim = feed.downloadStrategy == DownloadStrategy.DOWNLOAD_NEWEST
-                || feed.downloadStrategy == DownloadStrategy.GLOBAL
-                || (feed.downloadStrategy == DownloadStrategy.MANUAL && feed.allowCleanupForManual)
-            if (shouldTrim) {
-                episodeDao.trimOldDownloads(feedId, keepCount)
-            }
-        }
-
-        // ── Step 7: Trigger auto-download (AFTER cleanup — mandatory) ───────
+        // ── Steps 6+7: Cleanup THEN auto-download (mandatory order, rule #8) ─
+        // Retention cleanup runs inside autoDownloadNewEpisodes() before any new
+        // downloads are enqueued. Soft-delete only — episode records are never
+        // hard-deleted here (that would destroy play history and starred state).
         downloadRepository.autoDownloadNewEpisodes(feedId)
 
         // ── Step 8: Auto-add to My Episodes (Phase 4 stub) ──────────────────

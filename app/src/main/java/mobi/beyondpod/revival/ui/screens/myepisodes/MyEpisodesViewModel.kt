@@ -2,114 +2,88 @@ package mobi.beyondpod.revival.ui.screens.myepisodes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
+import mobi.beyondpod.revival.data.repository.FeedRepository
 import mobi.beyondpod.revival.domain.usecase.download.EnqueueDownloadUseCase
-import mobi.beyondpod.revival.domain.usecase.episode.ClearMyEpisodesUseCase
-import mobi.beyondpod.revival.domain.usecase.episode.GetMyEpisodesUseCase
-import mobi.beyondpod.revival.domain.usecase.episode.RemoveFromMyEpisodesUseCase
-import mobi.beyondpod.revival.domain.usecase.playlist.BuildMyEpisodesQueueUseCase
+import mobi.beyondpod.revival.service.FeedUpdateWorker
 import javax.inject.Inject
+
+data class EpisodeSection(val title: String, val episodes: List<EpisodeEntity>)
 
 sealed interface MyEpisodesUiState {
     data object Loading : MyEpisodesUiState
-    data class Success(val episodes: List<EpisodeEntity>) : MyEpisodesUiState
+    data class Success(
+        val sections: List<EpisodeSection>,
+        val allEpisodes: List<EpisodeEntity>
+    ) : MyEpisodesUiState
     data class Error(val message: String) : MyEpisodesUiState
 }
 
-/**
- * ViewModel for the My Episodes screen.
- *
- * The 5 §7.5 behavioural rules are enforced here:
- *
- * Rule 1 — Manual curation: episodes come from [GetMyEpisodesUseCase] which reads
- *   EpisodeEntity.isInMyEpisodes / ManualPlaylistEpisodeCrossRef, NOT SmartPlaylist
- *   rule evaluation. [EvaluateSmartPlaylistUseCase] is intentionally NOT used here.
- *
- * Rule 2 — Active playback queue: [buildQueueAndPlay] calls [BuildMyEpisodesQueueUseCase]
- *   which generates a frozen QueueSnapshotEntity from My Episodes order, then starts
- *   PlaybackService.
- *
- * Rule 3 — Indestructible: no deletePlaylist() method is exposed. The UI shows no
- *   delete-playlist action for My Episodes.
- *
- * Rule 4 — Persists across queue regeneration: uiState drives from ManualPlaylistEpisodeCrossRef
- *   (the source of truth), not from QueueSnapshotEntity (the derived execution copy).
- *
- * Rule 5 — Auto-population: FeedUpdateWorker adds new downloads automatically (Phase 3).
- *   This ViewModel simply reflects the current state via a live Flow.
- */
 @HiltViewModel
 class MyEpisodesViewModel @Inject constructor(
-    private val getMyEpisodesUseCase: GetMyEpisodesUseCase,
-    private val removeFromMyEpisodesUseCase: RemoveFromMyEpisodesUseCase,
-    private val clearMyEpisodesUseCase: ClearMyEpisodesUseCase,
-    private val buildMyEpisodesQueueUseCase: BuildMyEpisodesQueueUseCase,
     private val episodeRepository: EpisodeRepository,
-    private val enqueueDownloadUseCase: EnqueueDownloadUseCase
+    private val feedRepository: FeedRepository,
+    private val enqueueDownloadUseCase: EnqueueDownloadUseCase,
+    private val workManager: WorkManager
 ) : ViewModel() {
 
-    // ── Rule 1 + 4: live from ManualPlaylistEpisodeCrossRef, not from SmartPlaylist eval ──
-    val uiState: StateFlow<MyEpisodesUiState> = getMyEpisodesUseCase()
-        .map<List<EpisodeEntity>, MyEpisodesUiState> { MyEpisodesUiState.Success(it) }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = MyEpisodesUiState.Loading
-        )
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    // ── Rule 2: generates QueueSnapshotEntity from My Episodes order ─────────
-    fun buildQueueAndPlay(): Result<Unit>? {
-        var result: Result<Unit>? = null
-        viewModelScope.launch {
-            result = buildMyEpisodesQueueUseCase()
-            // PlaybackService is started by the UI layer via Context.startService()
-            // after this use case returns successfully.
+    // Episode sections — 3-flow combine, proven stable
+    val uiState: StateFlow<MyEpisodesUiState> = combine(
+        episodeRepository.getRecentDownloads(5),
+        episodeRepository.getRecentlyPlayed(5),
+        episodeRepository.getStarredEpisodes(50)
+    ) { downloads, recentPlayed, starred ->
+        val sections = buildList {
+            if (downloads.isNotEmpty()) add(EpisodeSection("Latest Downloads", downloads))
+            if (recentPlayed.isNotEmpty()) add(EpisodeSection("Recently Played", recentPlayed))
+            if (starred.isNotEmpty()) add(EpisodeSection("Starred", starred))
         }
-        return result
+        MyEpisodesUiState.Success(sections, (downloads + recentPlayed + starred).distinctBy { it.id })
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = MyEpisodesUiState.Loading
+    )
+
+    // Feed artwork — separate flow, never touches the episode combine
+    val feedImageUrls: StateFlow<Map<Long, String?>> = feedRepository.getAllFeeds()
+        .map { list -> list.associate { it.id to it.imageUrl } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap<Long, String?>())
+
+    // Feed titles — separate flow
+    val feedTitles: StateFlow<Map<Long, String>> = feedRepository.getAllFeeds()
+        .map { list -> list.associate { it.id to it.title } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap<Long, String>())
+
+    fun buildQueueAndPlay() {
+        viewModelScope.launch {
+            val episodes = (uiState.value as? MyEpisodesUiState.Success)?.allEpisodes ?: return@launch
+            episodeRepository.buildQueueSnapshot(null, episodes.map { it.id })
+        }
     }
 
-    /**
-     * Shuffle play — builds a queue snapshot with episodes in random order.
-     * Does NOT reorder My Episodes itself (§7.5 PlaylistHeaderActionBar).
-     */
     fun shuffleAndPlay() {
         viewModelScope.launch {
-            val episodes = (uiState.value as? MyEpisodesUiState.Success)?.episodes ?: return@launch
-            val shuffledIds = episodes.map { it.id }.shuffled()
-            // sourcePlaylistId = null for shuffle (not a rule-driven snapshot)
-            episodeRepository.buildQueueSnapshot(null, shuffledIds)
-        }
-    }
-
-    /** Remove one episode from My Episodes (swipe-to-dismiss / context action). */
-    fun removeEpisode(episodeId: Long) {
-        viewModelScope.launch {
-            removeFromMyEpisodesUseCase(episodeId)
-        }
-    }
-
-    /**
-     * Reorder My Episodes. Updates ManualPlaylistEpisodeCrossRef positions and
-     * syncs the active QueueSnapshotEntity atomically (§7.5 drag-to-reorder).
-     * Full drag UI wired in Phase 6.
-     */
-    fun reorderEpisodes(orderedIds: List<Long>) {
-        viewModelScope.launch {
-            episodeRepository.reorderMyEpisodes(orderedIds)
-        }
-    }
-
-    /** Clear Queue — removes all episodes from My Episodes + deactivates active snapshot. */
-    fun clearQueue() {
-        viewModelScope.launch {
-            clearMyEpisodesUseCase()
+            val episodes = (uiState.value as? MyEpisodesUiState.Success)?.allEpisodes ?: return@launch
+            episodeRepository.buildQueueSnapshot(null, episodes.map { it.id }.shuffled())
         }
     }
 
@@ -117,5 +91,24 @@ class MyEpisodesViewModel @Inject constructor(
         viewModelScope.launch { enqueueDownloadUseCase(episodeId) }
     }
 
-    // ── Rule 3: NO deletePlaylist() method exposed — My Episodes is indestructible ──
+    /**
+     * Pull-to-refresh: enqueue a one-time FeedUpdateWorker for ALL feeds.
+     * The spinner is shown briefly then dismissed — reactive flows in the
+     * sections update automatically as downloads and DB changes come in.
+     */
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            workManager.enqueueUniqueWork(
+                "manual_refresh_all",
+                ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<FeedUpdateWorker>()
+                    .setInputData(workDataOf(FeedUpdateWorker.KEY_FEED_ID to FeedUpdateWorker.ALL_FEEDS))
+                    .build()
+            )
+            // Brief delay so user sees the indicator, then let reactive flows handle updates
+            delay(1_500)
+            _isRefreshing.value = false
+        }
+    }
 }

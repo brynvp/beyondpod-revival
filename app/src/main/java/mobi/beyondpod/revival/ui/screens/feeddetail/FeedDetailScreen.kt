@@ -21,6 +21,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +55,7 @@ import coil3.compose.AsyncImage
 import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.ui.components.EpisodeListItem
+import mobi.beyondpod.revival.ui.navigation.Screen
 
 /**
  * Feed detail screen — episode list (tab 0) + feed settings (tab 1).
@@ -76,10 +78,12 @@ fun FeedDetailScreen(
 ) {
     val uiState      by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val categories   by viewModel.categories.collectAsState()
     val context      = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showCategoryDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -102,6 +106,13 @@ fun FeedDetailScreen(
                             text = { Text("Mark All Played") },
                             onClick = {
                                 viewModel.markAllPlayed()
+                                showMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Assign Category") },
+                            onClick = {
+                                showCategoryDialog = true
                                 showMenu = false
                             }
                         )
@@ -158,6 +169,7 @@ fun FeedDetailScreen(
                                         context.startService(
                                             PlaybackService.playEpisodeIntent(context, episodeId)
                                         )
+                                        navController.navigate(Screen.FullPlayer.route)
                                     },
                                     onDownloadClick = viewModel::downloadEpisode
                                 )
@@ -168,6 +180,60 @@ fun FeedDetailScreen(
                 }
             }
         }
+    }
+
+    // Assign Category dialog
+    if (showCategoryDialog) {
+        val currentCategoryId = (uiState as? FeedDetailUiState.Success)?.feed?.primaryCategoryId
+        AlertDialog(
+            onDismissRequest = { showCategoryDialog = false },
+            title = { Text("Assign Category") },
+            text = {
+                LazyColumn {
+                    // "Uncategorized" option
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentCategoryId == null,
+                                onClick = {
+                                    viewModel.assignCategory(null)
+                                    showCategoryDialog = false
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Uncategorized")
+                        }
+                    }
+                    items(items = categories, key = { it.id }) { category ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentCategoryId == category.id,
+                                onClick = {
+                                    viewModel.assignCategory(category.id)
+                                    showCategoryDialog = false
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(category.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showCategoryDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 
     // Unsubscribe confirmation dialog
@@ -228,6 +294,8 @@ private fun EpisodesTab(
                     episode = episode,
                     onClick = { onEpisodeClick(episode.id) },
                     onDownloadClick = { onDownloadClick(episode.id) },
+                    feedImageUrl = state.feed.imageUrl,
+                    feedTitle = state.feed.title,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp)

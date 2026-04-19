@@ -116,6 +116,14 @@ interface EpisodeDao {
     fun getStarredEpisodes(): Flow<List<EpisodeEntity>>
 
     @Query("""
+        SELECT * FROM episodes
+        WHERE playState IN ('PLAYED', 'IN_PROGRESS')
+        ORDER BY COALESCE(lastPlayed, pubDate) DESC
+        LIMIT :limit
+    """)
+    fun getRecentlyPlayed(limit: Int = 5): Flow<List<EpisodeEntity>>
+
+    @Query("""
         SELECT e.* FROM episodes e
         WHERE e.playState = 'NEW'
         AND e.feedId IN (
@@ -162,6 +170,18 @@ interface EpisodeDao {
         ORDER BY pubDate ASC
     """)
     suspend fun getPlayedDownloadedForCleanup(feedId: Long): List<EpisodeEntity>
+
+    // Returns ALL downloaded non-protected episodes (played and unplayed), newest first.
+    // Used for retention cleanup — keep the newest N, delete the rest.
+    // isProtected = 0 enforced here; absolute veto rule #4 applies.
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId
+        AND downloadState = 'DOWNLOADED'
+        AND isProtected = 0
+        ORDER BY pubDate DESC
+    """)
+    suspend fun getAllDownloadedNonProtected(feedId: Long): List<EpisodeEntity>
 
     // Episodes available for auto-download (not yet downloaded), newest first
     @Query("""
