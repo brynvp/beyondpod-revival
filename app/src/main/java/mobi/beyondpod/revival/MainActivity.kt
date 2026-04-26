@@ -9,15 +9,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.flow.map
+import mobi.beyondpod.revival.data.settings.AppSettings
+import javax.inject.Inject
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Queue
 import androidx.compose.material.icons.filled.QueueMusic
@@ -34,6 +36,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,6 +58,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var dataStore: DataStore<Preferences>
 
     // Android 13+ (API 33): POST_NOTIFICATIONS is a runtime permission.
     // Without it, download progress and playback notifications are silently suppressed.
@@ -77,7 +83,18 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            BeyondPodTheme {
+            // Read theme preference reactively — "system" | "light" | "dark" (default "system")
+            val themePref by dataStore.data
+                .map { prefs -> prefs[AppSettings.THEME] ?: "system" }
+                .collectAsState(initial = "system")
+
+            val darkTheme = when (themePref) {
+                "light"  -> false
+                "dark"   -> true
+                else     -> isSystemInDarkTheme()   // "system" follows device setting
+            }
+
+            BeyondPodTheme(darkTheme = darkTheme) {
                 AppShell()
             }
         }
@@ -134,6 +151,12 @@ fun AppShell() {
                         IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "Open menu")
                         }
+                    },
+                    actions = {
+                        // Search icon — always reachable without opening the drawer
+                        IconButton(onClick = { navController.navigate(Screen.PodcastSearch.route) }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search podcasts")
+                        }
                     }
                 )
             },
@@ -186,7 +209,7 @@ private fun BeyondPodDrawerContent(
             }
         )
 
-        // Feeds (Phase 5 — FeedListScreen, grouped by category)
+        // Feeds
         NavigationDrawerItem(
             icon  = { Icon(Icons.Default.Podcasts, contentDescription = null) },
             label = { Text("Feeds") },
@@ -197,53 +220,9 @@ private fun BeyondPodDrawerContent(
             }
         )
 
-        // Search Podcasts
-        NavigationDrawerItem(
-            icon     = { Icon(Icons.Default.Search, contentDescription = null) },
-            label    = { Text("Search Podcasts") },
-            selected = currentRoute == Screen.PodcastSearch.route,
-            onClick  = {
-                navController.navigate(Screen.PodcastSearch.route)
-                onDestinationSelected()
-            }
-        )
-
-        // Add Podcast (Phase 5)
-        NavigationDrawerItem(
-            icon  = { Icon(Icons.Default.LibraryMusic, contentDescription = null) },
-            label = { Text("Add Podcast") },
-            selected = false,
-            onClick = {
-                navController.navigate(Screen.AddFeed.route)
-                onDestinationSelected()
-            }
-        )
-
-        // Manage Categories (Phase 5)
-        NavigationDrawerItem(
-            icon  = { Icon(Icons.Default.Category, contentDescription = null) },
-            label = { Text("Manage Categories") },
-            selected = currentRoute == Screen.CategoryManagement.route,
-            onClick = {
-                navController.navigate(Screen.CategoryManagement.route)
-                onDestinationSelected()
-            }
-        )
-
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-        // Playlists (Phase 6)
-        NavigationDrawerItem(
-            icon  = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
-            label = { Text("Playlists") },
-            selected = currentRoute == Screen.SmartPlaylists.route,
-            onClick = {
-                navController.navigate(Screen.SmartPlaylists.route)
-                onDestinationSelected()
-            }
-        )
-
-        // Queue (Phase 6)
+        // Queue
         NavigationDrawerItem(
             icon  = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
             label = { Text("Queue") },
@@ -256,7 +235,7 @@ private fun BeyondPodDrawerContent(
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-        // Settings (Phase 7)
+        // Settings
         NavigationDrawerItem(
             icon  = { Icon(Icons.Default.Settings, contentDescription = null) },
             label = { Text("Settings") },

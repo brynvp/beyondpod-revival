@@ -1,5 +1,8 @@
 package mobi.beyondpod.revival.ui.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
@@ -34,7 +37,11 @@ fun BeyondPodNavGraph(
     NavHost(
         navController = navController,
         startDestination = Screen.MyEpisodes.route,
-        modifier = modifier
+        modifier = modifier,
+        enterTransition    = { fadeIn(tween(180)) },
+        exitTransition     = { fadeOut(tween(120)) },
+        popEnterTransition = { fadeIn(tween(180)) },
+        popExitTransition  = { fadeOut(tween(120)) }
     ) {
         // ── My Episodes (default landing screen) ─────────────────────────────
         composable(Screen.MyEpisodes.route) {

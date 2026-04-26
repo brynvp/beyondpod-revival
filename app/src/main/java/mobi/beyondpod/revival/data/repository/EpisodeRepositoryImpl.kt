@@ -43,6 +43,9 @@ class EpisodeRepositoryImpl @Inject constructor(
 
     // ── What to Play sections ─────────────────────────────────────────────────
 
+    override fun getLatestEpisodes(limit: Int): Flow<List<EpisodeEntity>> =
+        episodeDao.getLatestEpisodes(limit)
+
     override fun getRecentDownloads(limit: Int): Flow<List<EpisodeEntity>> =
         episodeDao.getDownloadedEpisodes().map { it.take(limit) }
 

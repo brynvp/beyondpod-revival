@@ -27,6 +27,10 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes ORDER BY pubDate DESC")
     fun getAllEpisodes(): Flow<List<EpisodeEntity>>
 
+    // "What to Play" flat feed — all episodes newest-first, no download filter
+    @Query("SELECT * FROM episodes ORDER BY pubDate DESC LIMIT :limit")
+    fun getLatestEpisodes(limit: Int): Flow<List<EpisodeEntity>>
+
     @Query("SELECT * FROM episodes WHERE id = :episodeId")
     suspend fun getEpisodeById(episodeId: Long): EpisodeEntity?
 

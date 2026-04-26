@@ -18,6 +18,10 @@ import androidx.room.PrimaryKey
         Index("guid"),
         Index("pubDate"),
         Index("playState"),
+        Index("downloadState"),   // getDownloadedEpisodes() global scan
+        Index("downloadedAt"),    // sort order for downloaded episodes
+        Index("isStarred"),       // getStarredEpisodes() global scan
+        Index("lastPlayed"),      // getRecentlyPlayed() sort order
         // Compound indices for efficient feed-scoped queries (§13 mandatory)
         Index(value = ["feedId", "pubDate"]),
         Index(value = ["feedId", "playState"]),

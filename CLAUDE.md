@@ -15,7 +15,7 @@ the most capable Android podcast app before it was abandoned. The full specifica
 
 ## Current Build Phase
 
-**PHASE: 8 — Widgets + Polish complete**
+**PHASE: Post-build — Usability polish in progress (all 8 build phases complete)**
 
 Update this line at the start of each session to reflect where you are:
 - Phase 0: Scaffold only (project exists, no feature code)
@@ -26,9 +26,12 @@ Update this line at the start of each session to reflect where you are:
 - Phase 5: Feed management UI
 - Phase 6: SmartPlay + Queue UI
 - Phase 7: Import/Export + Settings
-- Phase 8: Widgets + Polish
+- Phase 8: Widgets + Polish ✓ COMPLETE
+- Post-build: Real-device QA fixes — see QA_REVIEW.md for full log
 
-**Spec sections for current phase**: §6 Repository Layer (next: Phase 2)
+**Room DB version**: 3 (migration 2→3 adds standalone indices; migration 1→2 adds compound indices)
+
+**Spec sections for current phase**: Reference QA_REVIEW.md § 3–5 for current known issues and fixes.
 
 ---
 

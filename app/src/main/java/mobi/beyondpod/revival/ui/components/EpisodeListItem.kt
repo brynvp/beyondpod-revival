@@ -225,9 +225,11 @@ fun EpisodeListItem(
     }
 }
 
+private val EPISODE_DATE_FMT = SimpleDateFormat("MMM d", Locale.getDefault())
+
 private fun formatDate(epochMs: Long): String {
     if (epochMs == 0L) return ""
-    return SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(epochMs))
+    return EPISODE_DATE_FMT.format(Date(epochMs))
 }
 
 private fun formatDuration(ms: Long): String {

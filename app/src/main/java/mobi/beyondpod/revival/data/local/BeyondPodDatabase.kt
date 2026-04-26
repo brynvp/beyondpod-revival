@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.RoomDatabase.JournalMode
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -44,7 +45,7 @@ import mobi.beyondpod.revival.data.local.entity.SyncStateEntity
         ChangeHistoryEntity::class,           // Subscription change log (gPodder sync diffs)
         ScheduledTaskEntity::class            // User-defined scheduled update tasks
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -74,9 +75,21 @@ abstract class BeyondPodDatabase : RoomDatabase() {
             }
         }
 
+        // ── Migration 2 → 3: standalone indices for global episode queries ─────────
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Standalone indices — the compound feedId+X ones exist but global queries
+                // (no feedId filter) need these to avoid full table scans.
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_downloadState` ON `episodes` (`downloadState`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_downloadedAt` ON `episodes` (`downloadedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_isStarred` ON `episodes` (`isStarred`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_lastPlayed` ON `episodes` (`lastPlayed`)")
+            }
+        }
+
         /**
          * Singleton accessor for non-Hilt contexts (e.g., widget [RemoteViewsFactory]).
-         * Hilt's [DatabaseModule] uses [MIGRATION_1_2] via [addMigrations]; this accessor does too.
+         * Hilt's [DatabaseModule] uses all migrations; this accessor does too.
          */
         @Volatile private var widgetInstance: BeyondPodDatabase? = null
 
@@ -86,7 +99,11 @@ abstract class BeyondPodDatabase : RoomDatabase() {
                     context.applicationContext,
                     BeyondPodDatabase::class.java,
                     DATABASE_NAME
-                ).addMigrations(MIGRATION_1_2).build().also { widgetInstance = it }
+                )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                    .build()
+                    .also { widgetInstance = it }
             }
     }
 }

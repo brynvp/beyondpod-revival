@@ -2,6 +2,7 @@ package mobi.beyondpod.revival.di
 
 import android.app.Application
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -23,7 +24,9 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(app: Application): BeyondPodDatabase =
         Room.databaseBuilder(app, BeyondPodDatabase::class.java, BeyondPodDatabase.DATABASE_NAME)
-            .addMigrations(BeyondPodDatabase.MIGRATION_1_2)
+            .addMigrations(BeyondPodDatabase.MIGRATION_1_2, BeyondPodDatabase.MIGRATION_2_3)
+            // WAL mode: reads never block writes (DownloadWorker writes while UI reads)
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
             .build()
 
     @Provides
