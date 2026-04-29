@@ -9,23 +9,33 @@ import androidx.room.Index
  * Primary category (isPrimary = true) drives navigator placement.
  * Secondary category makes the feed visible in a second category's episode list.
  *
- * FK policy: CASCADE on feedId (feed deleted → remove cross-ref rows).
- * NO cascade on categoryId — deleting a category must NOT delete feeds or cross-ref rows
- * automatically. The CategoryRepository must manually delete cross-ref rows before deleting
- * the CategoryEntity, then null out primaryCategoryId/secondaryCategoryId on affected FeedEntity
- * rows. This is the "move to Uncategorized" behaviour. See §7.3 Category Deletion.
+ * FK policy:
+ * - CASCADE on feedId  → cross-ref row removed when the feed is deleted (correct).
+ * - CASCADE on categoryId → cross-ref row removed when the category is deleted (correct).
+ *   This does NOT delete the feed — CASCADE on a junction FK only removes the junction row.
+ *   CategoryRepository still nulls out primaryCategoryId/secondaryCategoryId on affected
+ *   FeedEntity rows so they appear in Uncategorized. See §7.3 Category Deletion.
+ *
+ * (DB version 4 — added categoryId FK. Migration 3→4 in BeyondPodDatabase.)
  */
 @Entity(
     tableName = "feed_category_cross_ref",
     primaryKeys = ["feedId", "categoryId"],
-    foreignKeys = [ForeignKey(
-        entity = FeedEntity::class,
-        parentColumns = ["id"],
-        childColumns = ["feedId"],
-        onDelete = ForeignKey.CASCADE   // Cross-ref removed when feed is deleted — correct
-    )],
-    // Index on feedId for FK performance; categoryId is not a FK (deliberate — see KDoc above).
-    indices = [Index("feedId")]
+    foreignKeys = [
+        ForeignKey(
+            entity = FeedEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["feedId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = CategoryEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["categoryId"],
+            onDelete = ForeignKey.CASCADE   // Only removes this junction row — feed is unaffected
+        )
+    ],
+    indices = [Index("feedId"), Index("categoryId")]
 )
 data class FeedCategoryCrossRef(
     val feedId: Long,

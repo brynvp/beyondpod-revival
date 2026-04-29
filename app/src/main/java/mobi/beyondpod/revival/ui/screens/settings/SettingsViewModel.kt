@@ -42,6 +42,7 @@ data class SettingsUiState(
     val downloadOnWifiOnly: Boolean = true,
     val globalDownloadCount: Int    = 1,
     val globalMaxKeep: Int          = 5,
+    val globalDeleteOlderThanDays: Int = 99999,  // 99999 = never
     val autoDeletePlayed: Boolean   = false,
 
     // Interface
@@ -93,10 +94,11 @@ class SettingsViewModel @Inject constructor(
             updateIntervalHours  = prefs[AppSettings.UPDATE_INTERVAL_HOURS] ?: 4,
             turnWifiDuringUpdate = prefs[AppSettings.TURN_WIFI_DURING_UPDATE] ?: false,
             updateOnWifiOnly     = prefs[AppSettings.UPDATE_ON_WIFI_ONLY] ?: false,
-            downloadOnWifiOnly   = prefs[AppSettings.DOWNLOAD_ON_WIFI_ONLY] ?: true,
-            globalDownloadCount  = prefs[AppSettings.GLOBAL_DOWNLOAD_COUNT] ?: 1,
-            globalMaxKeep        = prefs[AppSettings.GLOBAL_MAX_KEEP] ?: 5,
-            autoDeletePlayed     = prefs[AppSettings.AUTO_DELETE_PLAYED] ?: false,
+            downloadOnWifiOnly        = prefs[AppSettings.DOWNLOAD_ON_WIFI_ONLY] ?: true,
+            globalDownloadCount       = prefs[AppSettings.GLOBAL_DOWNLOAD_COUNT] ?: 1,
+            globalMaxKeep             = prefs[AppSettings.GLOBAL_MAX_KEEP] ?: 5,
+            globalDeleteOlderThanDays = prefs[AppSettings.GLOBAL_DELETE_OLDER_THAN_DAYS] ?: 99999,
+            autoDeletePlayed          = prefs[AppSettings.AUTO_DELETE_PLAYED] ?: false,
             theme                = prefs[AppSettings.THEME] ?: "system",
             scrobbleEnabled      = prefs[AppSettings.SCROBBLE_ENABLED] ?: false,
             notifNewEpisodes     = prefs[AppSettings.NOTIF_NEW_EPISODES] ?: true,
@@ -159,10 +161,11 @@ class SettingsViewModel @Inject constructor(
     fun setTurnWifiDuringUpdate(v: Boolean) = set { it[AppSettings.TURN_WIFI_DURING_UPDATE] = v }
     fun setUpdateOnWifiOnly(v: Boolean)   = set { it[AppSettings.UPDATE_ON_WIFI_ONLY] = v }
 
-    fun setDownloadOnWifiOnly(v: Boolean) = set { it[AppSettings.DOWNLOAD_ON_WIFI_ONLY] = v }
-    fun setGlobalDownloadCount(v: Int)    = set { it[AppSettings.GLOBAL_DOWNLOAD_COUNT] = v }
-    fun setGlobalMaxKeep(v: Int)          = set { it[AppSettings.GLOBAL_MAX_KEEP] = v }
-    fun setAutoDeletePlayed(v: Boolean)   = set { it[AppSettings.AUTO_DELETE_PLAYED] = v }
+    fun setDownloadOnWifiOnly(v: Boolean)      = set { it[AppSettings.DOWNLOAD_ON_WIFI_ONLY] = v }
+    fun setGlobalDownloadCount(v: Int)         = set { it[AppSettings.GLOBAL_DOWNLOAD_COUNT] = v }
+    fun setGlobalMaxKeep(v: Int)               = set { it[AppSettings.GLOBAL_MAX_KEEP] = v }
+    fun setGlobalDeleteOlderThanDays(v: Int)   = set { it[AppSettings.GLOBAL_DELETE_OLDER_THAN_DAYS] = v }
+    fun setAutoDeletePlayed(v: Boolean)        = set { it[AppSettings.AUTO_DELETE_PLAYED] = v }
 
     fun setTheme(v: String)              = set { it[AppSettings.THEME] = v }
     fun setScrobbleEnabled(v: Boolean)   = set { it[AppSettings.SCROBBLE_ENABLED] = v }

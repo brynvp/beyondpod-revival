@@ -158,19 +158,33 @@ fun SettingsScreen(
                 )
             }
             item {
-                StepperPref(
+                ListPref(
                     title    = "Auto-download count (per feed)",
                     subtitle = if (state.globalDownloadCount == 0) "Disabled" else state.globalDownloadCount.toString(),
-                    onDecrement = { if (state.globalDownloadCount > 0) viewModel.setGlobalDownloadCount(state.globalDownloadCount - 1) },
-                    onIncrement = { if (state.globalDownloadCount < 10) viewModel.setGlobalDownloadCount(state.globalDownloadCount + 1) }
+                    options  = listOf(0, 1, 3, 5, 10, 20),
+                    current  = state.globalDownloadCount,
+                    label    = { if (it == 0) "Disabled" else it.toString() },
+                    onSelect = viewModel::setGlobalDownloadCount
                 )
             }
             item {
-                StepperPref(
+                ListPref(
                     title    = "Keep downloaded episodes",
-                    subtitle = if (state.globalMaxKeep == 0) "All" else state.globalMaxKeep.toString(),
-                    onDecrement = { if (state.globalMaxKeep > 0) viewModel.setGlobalMaxKeep(state.globalMaxKeep - 1) },
-                    onIncrement = { if (state.globalMaxKeep < 50) viewModel.setGlobalMaxKeep(state.globalMaxKeep + 1) }
+                    subtitle = if (state.globalMaxKeep == 0) "Keep all" else state.globalMaxKeep.toString(),
+                    options  = listOf(0, 1, 3, 5, 10, 20, 50),
+                    current  = state.globalMaxKeep,
+                    label    = { if (it == 0) "Keep all" else it.toString() },
+                    onSelect = viewModel::setGlobalMaxKeep
+                )
+            }
+            item {
+                ListPref(
+                    title    = "Delete episodes older than",
+                    subtitle = deleteOlderThanLabel(state.globalDeleteOlderThanDays),
+                    options  = listOf(7, 30, 90, 180, 365, 99999),
+                    current  = state.globalDeleteOlderThanDays,
+                    label    = ::deleteOlderThanLabel,
+                    onSelect = viewModel::setGlobalDeleteOlderThanDays
                 )
             }
             item {
@@ -280,6 +294,17 @@ fun SettingsScreen(
             item { Spacer(Modifier.height(32.dp)) }
         }
     }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+private fun deleteOlderThanLabel(days: Int): String = when (days) {
+    7     -> "1 week"
+    30    -> "1 month"
+    90    -> "3 months"
+    180   -> "6 months"
+    365   -> "1 year"
+    else  -> "Never"
 }
 
 // ── Pref composables ──────────────────────────────────────────────────────────

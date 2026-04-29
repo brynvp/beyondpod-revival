@@ -47,6 +47,12 @@ class FeedListViewModel @Inject constructor(
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
     private val UNCATEGORIZED_SENTINEL = -1L
 
+    init {
+        // Clear any stale lastUpdateFailed flags left by the pre-fix background worker.
+        // This is a one-shot repair that runs whenever the Feeds screen is first shown.
+        viewModelScope.launch { feedRepository.clearStaleUpdateFailedFlags() }
+    }
+
     val uiState: StateFlow<FeedListUiState> = combine(
         categoryRepository.getAllCategories(),
         feedRepository.getAllFeeds(),

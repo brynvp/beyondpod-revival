@@ -1,5 +1,6 @@
 package mobi.beyondpod.revival.di
 
+import android.app.DownloadManager
 import android.content.Context
 import androidx.work.WorkManager
 import com.google.gson.Gson
@@ -24,6 +25,11 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideGson(): Gson = Gson()
+
+    @Provides
+    @Singleton
+    fun provideDownloadManager(@ApplicationContext context: Context): DownloadManager =
+        context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     @Provides
     @Singleton

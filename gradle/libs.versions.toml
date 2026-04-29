@@ -29,6 +29,10 @@ datastore = "1.1.2"
 # Media3 / ExoPlayer
 media3 = "1.5.0"
 
+# Chromecast
+castFramework = "21.5.0"
+media3Cast = "1.5.0"
+
 # Networking
 okhttp = "4.12.0"
 retrofit = "2.11.0"
@@ -99,6 +103,11 @@ media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", versi
 media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
+media3-cast = { group = "androidx.media3", name = "media3-cast", version.ref = "media3Cast" }
+
+# ── Chromecast ────────────────────────────────────────────────────────────────
+cast-framework = { group = "com.google.android.gms", name = "play-services-cast-framework", version.ref = "castFramework" }
+mediarouter = { group = "androidx.mediarouter", name = "mediarouter", version = "1.7.0" }
 
 # ── Networking ───────────────────────────────────────────────────────────────
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }

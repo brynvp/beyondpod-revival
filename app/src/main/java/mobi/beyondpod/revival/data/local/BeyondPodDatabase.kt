@@ -45,7 +45,7 @@ import mobi.beyondpod.revival.data.local.entity.SyncStateEntity
         ChangeHistoryEntity::class,           // Subscription change log (gPodder sync diffs)
         ScheduledTaskEntity::class            // User-defined scheduled update tasks
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -87,6 +87,29 @@ abstract class BeyondPodDatabase : RoomDatabase() {
             }
         }
 
+        // ── Migration 3 → 4: add categoryId FK (ON DELETE CASCADE) to junction table ──
+        // SQLite cannot alter FK constraints — must drop-and-recreate the table.
+        // CASCADE on categoryId only removes the cross-ref row; the feed itself is untouched.
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `feed_category_cross_ref_new` (
+                        `feedId` INTEGER NOT NULL,
+                        `categoryId` INTEGER NOT NULL,
+                        `isPrimary` INTEGER NOT NULL DEFAULT 1,
+                        PRIMARY KEY(`feedId`, `categoryId`),
+                        FOREIGN KEY(`feedId`) REFERENCES `feeds`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("INSERT OR IGNORE INTO `feed_category_cross_ref_new` SELECT * FROM `feed_category_cross_ref`")
+                db.execSQL("DROP TABLE `feed_category_cross_ref`")
+                db.execSQL("ALTER TABLE `feed_category_cross_ref_new` RENAME TO `feed_category_cross_ref`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_feed_category_cross_ref_feedId` ON `feed_category_cross_ref` (`feedId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_feed_category_cross_ref_categoryId` ON `feed_category_cross_ref` (`categoryId`)")
+            }
+        }
+
         /**
          * Singleton accessor for non-Hilt contexts (e.g., widget [RemoteViewsFactory]).
          * Hilt's [DatabaseModule] uses all migrations; this accessor does too.
@@ -100,7 +123,7 @@ abstract class BeyondPodDatabase : RoomDatabase() {
                     BeyondPodDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .build()
                     .also { widgetInstance = it }

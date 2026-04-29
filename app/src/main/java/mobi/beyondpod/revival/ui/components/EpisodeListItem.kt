@@ -195,14 +195,14 @@ fun EpisodeListItem(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "Downloaded",
                     tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(24.dp)
                 )
                 DownloadStateEnum.QUEUED,
                 DownloadStateEnum.DOWNLOADING -> Icon(
                     imageVector = Icons.Default.Download,
                     contentDescription = "Downloading",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(24.dp)
                 )
                 else -> {
                     if (onDownloadClick != null) {
@@ -213,7 +213,7 @@ fun EpisodeListItem(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = "Download episode",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(32.dp)
                             )
                         }
                     }

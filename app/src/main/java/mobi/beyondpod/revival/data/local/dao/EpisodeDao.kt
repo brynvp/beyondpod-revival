@@ -187,6 +187,18 @@ interface EpisodeDao {
     """)
     suspend fun getAllDownloadedNonProtected(feedId: Long): List<EpisodeEntity>
 
+    // Downloaded non-protected episodes older than [cutoffMs] epoch — for age-based cleanup.
+    // cutoffMs = System.currentTimeMillis() - (days * 86_400_000L)
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId
+        AND downloadState = 'DOWNLOADED'
+        AND isProtected = 0
+        AND pubDate < :cutoffMs
+        ORDER BY pubDate ASC
+    """)
+    suspend fun getDownloadedOlderThan(feedId: Long, cutoffMs: Long): List<EpisodeEntity>
+
     // Episodes available for auto-download (not yet downloaded), newest first
     @Query("""
         SELECT * FROM episodes
@@ -203,7 +215,15 @@ interface EpisodeDao {
     """)
     suspend fun getNotDownloadedOldest(feedId: Long, count: Int): List<EpisodeEntity>
 
-    // Partial download resume support
+    // DownloadManager integration — store the system download ID so we can cancel/query it
+    @Query("UPDATE episodes SET downloadId = :dmId, downloadState = :state WHERE id = :episodeId")
+    suspend fun updateDownloadIdAndState(episodeId: Long, dmId: Long, state: DownloadStateEnum)
+
+    // Look up an episode by the DownloadManager ID stored at enqueue time
+    @Query("SELECT * FROM episodes WHERE downloadId = :downloadManagerId LIMIT 1")
+    suspend fun getEpisodeByDownloadManagerId(downloadManagerId: Long): EpisodeEntity?
+
+    // Partial download resume support (legacy — kept for DB schema compatibility)
     @Query("UPDATE episodes SET downloadBytesDownloaded = :bytes WHERE id = :episodeId")
     suspend fun updateDownloadProgress(episodeId: Long, bytes: Long)
 

@@ -1,6 +1,7 @@
 package mobi.beyondpod.revival.ui.screens.feeddetail
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -174,7 +175,7 @@ fun FeedDetailScreen(
                                     onDownloadClick = viewModel::downloadEpisode
                                 )
                             }
-                            1 -> SettingsTab(feed = state.feed)
+                            1 -> SettingsTab(feed = state.feed, viewModel = viewModel)
                         }
                     }
                 }
@@ -371,7 +372,14 @@ private fun FeedHeader(feed: FeedEntity) {
 }
 
 @Composable
-private fun SettingsTab(feed: FeedEntity) {
+private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
+    var showStrategyDialog by remember { mutableStateOf(false) }
+
+    // Cycle-through option lists — null = "Global default"
+    val downloadCountOptions = listOf(null, 1, 3, 5, 10, 20)
+    val keepCountOptions     = listOf(null, 0, 1, 3, 5, 10, 20, 50)
+    val wifiOptions: List<Boolean?> = listOf(null, true, false)
+
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item {
             SettingsSectionHeader("General")
@@ -386,28 +394,52 @@ private fun SettingsTab(feed: FeedEntity) {
         item {
             Spacer(Modifier.height(16.dp))
             SettingsSectionHeader("Download")
-            SettingsRow(
+
+            // Download strategy — tap to open dialog
+            ClickableSettingsRow(
                 label = "Download strategy",
-                value = feed.downloadStrategy.toDisplayName()
+                value = feed.downloadStrategy.toDisplayName(),
+                onClick = { showStrategyDialog = true }
             )
-            SettingsRow(
+
+            // Episodes to download — tap to cycle
+            ClickableSettingsRow(
                 label = "Episodes to download",
-                value = feed.downloadCount?.toString() ?: "Global default"
+                value = feed.downloadCount?.toString() ?: "Global default",
+                onClick = {
+                    val idx = downloadCountOptions.indexOf(feed.downloadCount)
+                    val next = downloadCountOptions[(idx + 1) % downloadCountOptions.size]
+                    viewModel.updateFeedProperties(feed.copy(downloadCount = next))
+                }
             )
-            SettingsRow(
+
+            // Episodes to keep — tap to cycle
+            ClickableSettingsRow(
                 label = "Episodes to keep",
                 value = when (feed.maxEpisodesToKeep) {
                     null -> "Global default"
                     0    -> "Keep all"
                     else -> feed.maxEpisodesToKeep.toString()
+                },
+                onClick = {
+                    val idx = keepCountOptions.indexOf(feed.maxEpisodesToKeep)
+                    val next = keepCountOptions[(idx + 1) % keepCountOptions.size]
+                    viewModel.updateFeedProperties(feed.copy(maxEpisodesToKeep = next))
                 }
             )
-            SettingsRow(
+
+            // Download only on WiFi — tap to cycle null/true/false
+            ClickableSettingsRow(
                 label = "Download only on WiFi",
                 value = when (feed.downloadOnlyOnWifi) {
                     true  -> "Yes"
                     false -> "No"
                     null  -> "Global default"
+                },
+                onClick = {
+                    val idx = wifiOptions.indexOf(feed.downloadOnlyOnWifi)
+                    val next = wifiOptions[(idx + 1) % wifiOptions.size]
+                    viewModel.updateFeedProperties(feed.copy(downloadOnlyOnWifi = next))
                 }
             )
         }
@@ -436,6 +468,41 @@ private fun SettingsTab(feed: FeedEntity) {
                 value = if (feed.useGoogleProxy) "Yes" else "No"
             )
         }
+    }
+
+    // Download strategy dialog
+    if (showStrategyDialog) {
+        val strategies = DownloadStrategy.entries
+        AlertDialog(
+            onDismissRequest = { showStrategyDialog = false },
+            title = { Text("Download Strategy") },
+            text = {
+                LazyColumn {
+                    items(items = strategies, key = { it.name }) { strategy ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = feed.downloadStrategy == strategy,
+                                onClick = {
+                                    viewModel.updateFeedProperties(feed.copy(downloadStrategy = strategy))
+                                    showStrategyDialog = false
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(strategy.toDisplayName())
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showStrategyDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 
@@ -466,6 +533,30 @@ private fun SettingsRow(label: String, value: String) {
             text = value,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
+    }
+    HorizontalDivider(thickness = 0.5.dp)
+}
+
+/** Like [SettingsRow] but the whole row is tappable. Used for editable per-feed settings. */
+@Composable
+private fun ClickableSettingsRow(label: String, value: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary
         )
     }
     HorizontalDivider(thickness = 0.5.dp)

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -242,6 +243,16 @@ private fun FeedRow(
                     maxLines = 1
                 )
             }
+        }
+        // Feed update failure indicator — shown when the last refresh attempt failed
+        if (feed.lastUpdateFailed) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector        = Icons.Default.Warning,
+                contentDescription = "Feed update failed: ${feed.lastUpdateError ?: "unknown error"}",
+                tint               = MaterialTheme.colorScheme.error,
+                modifier           = Modifier.size(18.dp)
+            )
         }
     }
 }

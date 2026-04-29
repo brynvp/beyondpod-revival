@@ -39,6 +39,7 @@ object AppSettings {
     val DOWNLOAD_ON_WIFI_ONLY   = booleanPreferencesKey("download_on_wifi_only")
     val GLOBAL_DOWNLOAD_COUNT   = intPreferencesKey("global_download_count") // default 1
     val GLOBAL_MAX_KEEP         = intPreferencesKey("global_max_keep")       // default 5; 0 = unlimited
+    val GLOBAL_DELETE_OLDER_THAN_DAYS = intPreferencesKey("global_delete_older_than_days") // default 99999 = never
     val AUTO_DELETE_PLAYED      = booleanPreferencesKey("auto_delete_played")
     val DOWNLOAD_STORAGE_PATH   = stringPreferencesKey("download_storage_path")
 

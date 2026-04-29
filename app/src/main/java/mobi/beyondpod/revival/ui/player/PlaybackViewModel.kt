@@ -75,6 +75,9 @@ class PlaybackViewModel @Inject constructor(
     private val _episodeDescription = MutableStateFlow("")
     val episodeDescription: StateFlow<String> = _episodeDescription
 
+    private val _episodePubDate = MutableStateFlow<Long?>(null)
+    val episodePubDate: StateFlow<Long?> = _episodePubDate
+
     private val _playbackSpeed = MutableStateFlow(1f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed
 
@@ -145,10 +148,11 @@ class PlaybackViewModel @Inject constructor(
         viewModelScope.launch {
             val episode = episodeId?.let { episodeRepository.getEpisodeById(it) }
             _episodeDescription.value = when {
-                episode == null              -> ""
-                episode.htmlDescription.isNotBlank() -> episode.htmlDescription
-                else                        -> episode.description
+                episode == null                        -> ""
+                episode.htmlDescription.isNotBlank()  -> episode.htmlDescription
+                else                                   -> episode.description
             }
+            _episodePubDate.value = episode?.pubDate
         }
     }
 

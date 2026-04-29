@@ -9,12 +9,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import mobi.beyondpod.revival.ui.player.PlaybackViewModel
+import mobi.beyondpod.revival.ui.theme.OnSurfaceDark
 import mobi.beyondpod.revival.ui.theme.SurfaceVariantDark
 
 /**
@@ -63,6 +64,7 @@ fun MiniPlayer(
             modifier = modifier
                 .fillMaxWidth()
                 .background(SurfaceVariantDark)
+                .navigationBarsPadding()      // keeps content above gesture/button nav bar
                 .clickable { onTap() }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -82,11 +84,12 @@ fun MiniPlayer(
 
             Spacer(Modifier.width(12.dp))
 
-            // Title + artist
+            // Title + artist — use OnSurfaceDark: background is always SurfaceVariantDark (near-black)
             Column(modifier = Modifier.weight(1f), content = {
                 Text(
                     text = title ?: "",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = OnSurfaceDark,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -94,28 +97,19 @@ fun MiniPlayer(
                     Text(
                         text = artist!!,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        color = OnSurfaceDark.copy(alpha = 0.65f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             })
 
-            // Play / Pause
+            // Play / Pause — matches original BP mini-player (no skip button)
             IconButton(onClick = { viewModel.togglePlayPause() }) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            // Skip forward
-            IconButton(onClick = { viewModel.skipForward() }) {
-                Icon(
-                    imageVector = Icons.Default.Forward30,
-                    contentDescription = "Skip forward",
-                    tint = MaterialTheme.colorScheme.onSurface
+                    tint = OnSurfaceDark
                 )
             }
         }

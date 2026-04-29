@@ -3,16 +3,22 @@ package mobi.beyondpod.revival.service
 import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
+import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.media3.cast.CastPlayer
+import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.google.android.gms.cast.framework.CastContext
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +31,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
+import mobi.beyondpod.revival.data.repository.FeedRepository
 import mobi.beyondpod.revival.data.settings.AppSettings
 import mobi.beyondpod.revival.widget.PlaybackWidgetState
 import javax.inject.Inject
@@ -38,6 +45,8 @@ import javax.inject.Inject
  * - LoudnessEnhancer volume boost (NEVER player.volume > 1.0f — §7.6 rule)
  * - Sleep timer (coroutine-based countdown)
  * - Position saved every 5 s + on every pause (§9 spec)
+ * - Chromecast via [CastPlayer] — drops in as a [Player] replacement when a Cast session starts.
+ *   Local file URIs cannot be cast; [switchToCast] refuses if the current source is a local file.
  *
  * Episode episodes are identified by their DB id stored as [MediaItem.mediaId].
  */
@@ -45,11 +54,19 @@ import javax.inject.Inject
 class PlaybackService : MediaSessionService() {
 
     @Inject lateinit var episodeRepository: EpisodeRepository
+    @Inject lateinit var feedRepository: FeedRepository
     @Inject lateinit var dataStore: DataStore<Preferences>
 
-    private lateinit var player: ExoPlayer
+    private lateinit var exoPlayer: ExoPlayer
+    private var castPlayer: CastPlayer? = null
     private lateinit var mediaSession: MediaSession
     private var loudnessEnhancer: LoudnessEnhancer? = null
+
+    /** True while a Cast session is active and CastPlayer is the active player. */
+    private var isCasting = false
+
+    /** The [Player] currently backing [mediaSession] — either [exoPlayer] or [castPlayer]. */
+    private val activePlayer: Player get() = if (isCasting) castPlayer!! else exoPlayer
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var positionSaveJob: Job? = null
@@ -57,6 +74,12 @@ class PlaybackService : MediaSessionService() {
 
     /** DB id of the episode currently loaded in the player, or -1 if none. */
     private var currentEpisodeId: Long = -1L
+
+    /**
+     * The stream URL of the currently loaded episode (never a local file path).
+     * Kept so [switchToCast] can hand off to CastPlayer without re-querying the DB.
+     */
+    private var currentStreamUrl: String? = null
 
     companion object {
         const val ACTION_SET_SLEEP_TIMER    = "mobi.beyondpod.revival.SET_SLEEP_TIMER"
@@ -91,7 +114,7 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        player = ExoPlayer.Builder(this)
+        exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
@@ -103,11 +126,24 @@ class PlaybackService : MediaSessionService() {
             .build()
             .also { it.addListener(playerListener) }
 
+        // CastContext may be unavailable on devices without Play Services (e.g. emulators without GMS).
+        // Wrap in try/catch so the app continues to work in that environment.
+        try {
+            val castContext = CastContext.getSharedInstance(this)
+            castPlayer = CastPlayer(castContext).also { cp ->
+                cp.addListener(playerListener)
+                cp.setSessionAvailabilityListener(castSessionListener)
+            }
+        } catch (e: Exception) {
+            // Play Services not available — Cast silently disabled
+            castPlayer = null
+        }
+
         val sessionActivity = packageManager
             .getLaunchIntentForPackage(packageName)
             ?.let { PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE) }
 
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaSession.Builder(this, exoPlayer)
             .apply { sessionActivity?.let { setSessionActivity(it) } }
             .build()
     }
@@ -122,16 +158,16 @@ class PlaybackService : MediaSessionService() {
                 if (ms > 0) startSleepTimer(ms)
             }
             ACTION_CANCEL_SLEEP_TIMER -> cancelSleepTimer()
-            ACTION_TOGGLE_PLAYBACK -> if (player.isPlaying) player.pause() else player.play()
-            ACTION_SKIP_BACK       -> player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0))
-            ACTION_SKIP_FORWARD    -> player.seekTo(player.currentPosition + 30_000L)
+            ACTION_TOGGLE_PLAYBACK -> if (activePlayer.isPlaying) activePlayer.pause() else activePlayer.play()
+            ACTION_SKIP_BACK       -> activePlayer.seekTo((activePlayer.currentPosition - 10_000L).coerceAtLeast(0))
+            ACTION_SKIP_FORWARD    -> activePlayer.seekTo(activePlayer.currentPosition + 30_000L)
             ACTION_REWIND          -> serviceScope.launch {
                 val skipSec = dataStore.data.first()[AppSettings.SKIP_BACK_SECONDS] ?: 10
-                player.seekTo((player.currentPosition - skipSec * 1000L).coerceAtLeast(0))
+                activePlayer.seekTo((activePlayer.currentPosition - skipSec * 1000L).coerceAtLeast(0))
             }
             ACTION_FAST_FORWARD    -> serviceScope.launch {
                 val skipSec = dataStore.data.first()[AppSettings.SKIP_FORWARD_SECONDS] ?: 30
-                player.seekTo(player.currentPosition + skipSec * 1000L)
+                activePlayer.seekTo(activePlayer.currentPosition + skipSec * 1000L)
             }
             ACTION_PLAY_EPISODE    -> {
                 val episodeId = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
@@ -146,34 +182,161 @@ class PlaybackService : MediaSessionService() {
         loudnessEnhancer?.release()
         loudnessEnhancer = null
         mediaSession.release()
-        player.removeListener(playerListener)
-        player.release()
+        exoPlayer.removeListener(playerListener)
+        exoPlayer.release()
+        castPlayer?.setSessionAvailabilityListener(null)
+        castPlayer?.removeListener(playerListener)
+        castPlayer?.release()
         super.onDestroy()
     }
 
     // ── Single episode playback ───────────────────────────────────────────────
 
     /**
-     * Look up [episodeId] in the DB, resolve the playback URI (local file preferred),
-     * seek to the saved position, and start playing. Must be called from [serviceScope]
-     * (Dispatchers.Main) so player operations are on the correct thread.
+     * Look up [episodeId] in the DB, resolve the playback URI, and start playing.
+     *
+     * If a Cast session is active **and** the episode has a stream URL (not local-only),
+     * playback is routed to [castPlayer]; otherwise [exoPlayer] is used. Local files cannot
+     * be cast — Chromecast requires a publicly reachable HTTP URL.
      */
     private fun loadAndPlay(episodeId: Long) {
         serviceScope.launch {
             val episode = episodeRepository.getEpisodeById(episodeId) ?: return@launch
-            // Prefer local file; fall back to streaming URL
+            val feed    = feedRepository.getFeedById(episode.feedId)
+
+            currentEpisodeId  = episodeId
+            currentStreamUrl  = episode.url  // always the remote stream URL, never local path
+
+            // Artwork: episode image preferred, fall back to feed image
+            val artworkUriStr = episode.imageUrl ?: feed?.imageUrl
+
+            val metadata = MediaMetadata.Builder()
+                .setTitle(episode.title)
+                .setArtist(feed?.title)
+                .setArtworkUri(artworkUriStr?.let { Uri.parse(it) })
+                .build()
+
+            if (isCasting && currentStreamUrl != null) {
+                // Cast path — stream URL only, local files cannot be served to Chromecast
+                val castItem = MediaItem.Builder()
+                    .setMediaId(episodeId.toString())
+                    .setUri(currentStreamUrl!!)
+                    .setMimeType(MimeTypes.AUDIO_MPEG)
+                    .setMediaMetadata(metadata)
+                    .build()
+                castPlayer!!.setMediaItem(castItem)
+                if (episode.playPosition > 0) castPlayer!!.seekTo(episode.playPosition)
+                castPlayer!!.prepare()
+                castPlayer!!.play()
+            } else {
+                // Local path — prefer downloaded file, fall back to stream
+                val uri = episode.localFilePath
+                    ?.takeIf { File(it).exists() }
+                    ?: episode.url
+
+                val exoItem = MediaItem.Builder()
+                    .setMediaId(episodeId.toString())
+                    .setUri(uri)
+                    .setMediaMetadata(metadata)
+                    .build()
+                exoPlayer.setMediaItem(exoItem)
+                if (episode.playPosition > 0) exoPlayer.seekTo(episode.playPosition)
+                exoPlayer.prepare()
+                exoPlayer.play()
+            }
+        }
+    }
+
+    // ── Cast session management ───────────────────────────────────────────────
+
+    /**
+     * Called by [castSessionListener] when a Cast session becomes available.
+     * Saves the current ExoPlayer position, pauses it, then hands the stream off to CastPlayer.
+     * If the current source is a local file (no stream URL available), casting is skipped.
+     */
+    private fun switchToCast() {
+        val streamUrl = currentStreamUrl
+        if (streamUrl == null) return  // nothing playing yet — Cast will handle next loadAndPlay
+
+        val position = exoPlayer.currentPosition
+        exoPlayer.pause()
+        isCasting = true
+
+        // Update MediaSession to use CastPlayer
+        mediaSession.player = castPlayer!!
+
+        serviceScope.launch {
+            val episode = if (currentEpisodeId > 0) episodeRepository.getEpisodeById(currentEpisodeId) else null
+            val feed    = if (episode != null) feedRepository.getFeedById(episode.feedId) else null
+            val artworkUriStr = episode?.imageUrl ?: feed?.imageUrl
+
+            val metadata = MediaMetadata.Builder()
+                .setTitle(episode?.title)
+                .setArtist(feed?.title)
+                .setArtworkUri(artworkUriStr?.let { Uri.parse(it) })
+                .build()
+
+            val castItem = MediaItem.Builder()
+                .setMediaId(currentEpisodeId.toString())
+                .setUri(streamUrl)
+                .setMimeType(MimeTypes.AUDIO_MPEG)
+                .setMediaMetadata(metadata)
+                .build()
+
+            castPlayer!!.setMediaItem(castItem)
+            castPlayer!!.seekTo(position)
+            castPlayer!!.prepare()
+            castPlayer!!.play()
+        }
+    }
+
+    /**
+     * Called by [castSessionListener] when the Cast session ends or is suspended.
+     * Saves the CastPlayer position and resumes ExoPlayer from there.
+     */
+    private fun switchToLocal() {
+        val position = castPlayer?.currentPosition ?: 0L
+        castPlayer?.stop()
+        isCasting = false
+
+        // Update MediaSession to use ExoPlayer
+        mediaSession.player = exoPlayer
+
+        val episodeId = currentEpisodeId
+        if (episodeId < 0) return
+
+        serviceScope.launch {
+            val episode = episodeRepository.getEpisodeById(episodeId) ?: return@launch
+            val feed    = feedRepository.getFeedById(episode.feedId)
+            val artworkUriStr = episode.imageUrl ?: feed?.imageUrl
+
+            val metadata = MediaMetadata.Builder()
+                .setTitle(episode.title)
+                .setArtist(feed?.title)
+                .setArtworkUri(artworkUriStr?.let { Uri.parse(it) })
+                .build()
+
+            // Resume with local file if available, otherwise stream
             val uri = episode.localFilePath
                 ?.takeIf { File(it).exists() }
                 ?: episode.url
-            val mediaItem = MediaItem.Builder()
+
+            val exoItem = MediaItem.Builder()
                 .setMediaId(episodeId.toString())
                 .setUri(uri)
+                .setMediaMetadata(metadata)
                 .build()
-            player.setMediaItem(mediaItem)
-            if (episode.playPosition > 0) player.seekTo(episode.playPosition)
-            player.prepare()
-            player.play()
+
+            exoPlayer.setMediaItem(exoItem)
+            exoPlayer.seekTo(position)
+            exoPlayer.prepare()
+            exoPlayer.play()
         }
+    }
+
+    private val castSessionListener = object : SessionAvailabilityListener {
+        override fun onCastSessionAvailable() { switchToCast() }
+        override fun onCastSessionUnavailable() { switchToLocal() }
     }
 
     // ── Volume boost (LoudnessEnhancer — §7.6) ────────────────────────────────
@@ -182,12 +345,14 @@ class PlaybackService : MediaSessionService() {
      * Apply software gain beyond 0 dB via [LoudnessEnhancer].
      * NEVER set player.volume > 1.0f.
      *
+     * Only applies to ExoPlayer (LoudnessEnhancer requires a real audio session id).
+     *
      * @param boostLevel 1 = no boost (0 dB), 2–10 = ~1 dB per step (max 10 dB)
      */
     fun applyVolumeBoost(boostLevel: Int) {
-        if (player.audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
+        if (exoPlayer.audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
         val enhancer = loudnessEnhancer
-            ?: LoudnessEnhancer(player.audioSessionId).also { loudnessEnhancer = it }
+            ?: LoudnessEnhancer(exoPlayer.audioSessionId).also { loudnessEnhancer = it }
         val gainMillibels = if (boostLevel <= 1) 0 else ((boostLevel - 1) * 111).coerceAtMost(1000)
         enhancer.setTargetGain(gainMillibels)
         enhancer.enabled = gainMillibels > 0
@@ -199,7 +364,7 @@ class PlaybackService : MediaSessionService() {
         sleepTimerJob?.cancel()
         sleepTimerJob = serviceScope.launch {
             delay(durationMs)
-            player.pause()
+            activePlayer.pause()
         }
     }
 
@@ -215,13 +380,13 @@ class PlaybackService : MediaSessionService() {
         positionSaveJob = serviceScope.launch {
             while (isActive) {
                 delay(5_000L)
-                if (player.isPlaying) {
+                if (activePlayer.isPlaying) {
                     // Guard: stop the timer if the episode was deleted while playing
                     if (episodeRepository.getEpisodeById(episodeId) == null) {
                         stopPositionSaving()
                         return@launch
                     }
-                    episodeRepository.savePlayPosition(episodeId, player.currentPosition)
+                    episodeRepository.savePlayPosition(episodeId, activePlayer.currentPosition)
                 }
             }
         }
@@ -257,7 +422,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    // ── Player event listener ─────────────────────────────────────────────────
+    // ── Player event listener (shared by ExoPlayer and CastPlayer) ────────────
 
     private val playerListener = object : Player.Listener {
 
@@ -265,12 +430,13 @@ class PlaybackService : MediaSessionService() {
             if (isPlaying) {
                 if (currentEpisodeId > 0) startPositionSaving(currentEpisodeId)
                 // LoudnessEnhancer must be re-created when audioSessionId changes (after prepare)
-                applyVolumeBoost(1)
+                // Only applies to ExoPlayer; skip silently when casting
+                if (!isCasting) applyVolumeBoost(1)
             } else {
                 stopPositionSaving()
                 // Save position immediately on pause
                 if (currentEpisodeId > 0) {
-                    val position = player.currentPosition
+                    val position = activePlayer.currentPosition
                     serviceScope.launch {
                         episodeRepository.savePlayPosition(currentEpisodeId, position)
                     }
@@ -281,7 +447,7 @@ class PlaybackService : MediaSessionService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             currentEpisodeId = mediaItem?.mediaId?.toLongOrNull() ?: -1L
-            notifyWidget(player.isPlaying)
+            notifyWidget(activePlayer.isPlaying)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -296,9 +462,7 @@ class PlaybackService : MediaSessionService() {
 
         override fun onPlayerError(error: PlaybackException) {
             // Stop unconditionally — leaves the player in STATE_IDLE with no automatic retry.
-            // This prevents ACTION_PLAY_EPISODE from being re-fired in a loop on source errors
-            // (cleartext blocked, bad URL, HTTP error, etc.).
-            player.stop()
+            activePlayer.stop()
         }
     }
 }

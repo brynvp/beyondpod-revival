@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.BeyondPod" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        android:colorBackground must be explicitly declared here (not just inherited from the
+        parent) because MediaRouterThemeHelper.getThemeColor() calls obtainStyledAttributes()
+        and only resolves values declared directly in the style resource — it does not walk
+        parent chains when the style resource itself contains no matching attribute. Without
+        this, colorBackground resolves to #0 (transparent) and MediaRouteButton crashes with
+        "background can not be translucent: #0" on every construction.
+
+        Value matches Material3's md_theme_light_background (#FFFAFAFA).
+        Night variant in res/values-night/themes.xml uses the dark token (#FF1C1B1F).
+    -->
+    <style name="Theme.BeyondPod" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorBackground">#FFFAFAFA</item>
+    </style>
 </resources>

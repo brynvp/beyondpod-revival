@@ -47,6 +47,9 @@ class FeedUpdateWorker @AssistedInject constructor(
         val feedId = inputData.getLong(KEY_FEED_ID, ALL_FEEDS)
         return try {
             if (feedId == ALL_FEEDS) {
+                // Clear any stale lastUpdateFailed flags left by the old worker bug before
+                // processing feeds — ensures the warning icon only fires on real failures.
+                feedDao.clearAllUpdateFailedFlags()
                 feedDao.getAllFeedsList().forEach { processFeed(it.id) }
             } else {
                 processFeed(feedId)
@@ -61,11 +64,11 @@ class FeedUpdateWorker @AssistedInject constructor(
         val feed = feedDao.getFeedById(feedId) ?: return
 
         // ── Steps 1–4: Fetch, parse, dedup, upsert, archive ─────────────────
-        // RSS parsing is a Phase 7 concern (custom SAX parser per CLAUDE.md).
-        // refreshFeed() currently stores a NotImplementedError stub — that is intentional;
-        // failures here must not block the cleanup + download steps below.
-        feedRepository.refreshFeed(feedId)
-            .onFailure { /* log in Phase 7; continue to cleanup */ }
+        // markFailure=false: background failures are transient — don't stamp lastUpdateFailed=true
+        // on every feed when the device is briefly offline. The warning icon is only meaningful
+        // for manual pull-to-refresh failures (FeedDetailViewModel.refresh uses the default true).
+        feedRepository.refreshFeed(feedId, markFailure = false)
+            .onFailure { /* silent — background failure; will retry on next scheduled run */ }
 
         // ── Step 5: Enforce maxTrackAgeDays ─────────────────────────────────
         // Full age-based cleanup requires a DAO query keyed on pubDate + maxTrackAgeDays.

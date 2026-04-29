@@ -75,11 +75,16 @@ dependencies {
     // DataStore
     implementation(libs.datastore.preferences)
 
-    // Media3 (ExoPlayer)
+    // Media3 (ExoPlayer + Cast)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
     implementation(libs.media3.ui)
     implementation(libs.media3.datasource.okhttp)
+    implementation(libs.media3.cast)
+
+    // Chromecast
+    implementation(libs.cast.framework)
+    implementation(libs.mediarouter)
 
     // Networking
     implementation(libs.okhttp)

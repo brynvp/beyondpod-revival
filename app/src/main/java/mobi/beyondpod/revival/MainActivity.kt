@@ -21,8 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Queue
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -112,6 +112,7 @@ fun AppShell() {
 
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
+    val isFullPlayer = currentRoute == Screen.FullPlayer.route
 
     val screenTitle = when {
         currentRoute == Screen.MyEpisodes.route         -> "My Episodes"
@@ -145,27 +146,32 @@ fun AppShell() {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
-                TopAppBar(
-                    title = { Text(screenTitle) },
-                    navigationIcon = {
-                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Open menu")
+                // Hidden on FullPlayer so PlayerScreen can own its own full-screen header
+                if (!isFullPlayer) {
+                    TopAppBar(
+                        title = { Text(screenTitle) },
+                        navigationIcon = {
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "Open menu")
+                            }
+                        },
+                        actions = {
+                            // Search icon — always reachable without opening the drawer
+                            IconButton(onClick = { navController.navigate(Screen.PodcastSearch.route) }) {
+                                Icon(Icons.Default.Search, contentDescription = "Search podcasts")
+                            }
                         }
-                    },
-                    actions = {
-                        // Search icon — always reachable without opening the drawer
-                        IconButton(onClick = { navController.navigate(Screen.PodcastSearch.route) }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search podcasts")
-                        }
-                    }
-                )
+                    )
+                }
             },
             bottomBar = {
-                // Mini player is always present (visible only when episode loaded — §7.6)
-                MiniPlayer(
-                    onTap = { navController.navigate(Screen.FullPlayer.route) },
-                    viewModel = playbackViewModel
-                )
+                // Hidden on FullPlayer (no mini-player overlapping the full-screen player)
+                if (!isFullPlayer) {
+                    MiniPlayer(
+                        onTap = { navController.navigate(Screen.FullPlayer.route) },
+                        viewModel = playbackViewModel
+                    )
+                }
             }
         ) { innerPadding ->
             BeyondPodNavGraph(
@@ -224,7 +230,7 @@ private fun BeyondPodDrawerContent(
 
         // Queue
         NavigationDrawerItem(
-            icon  = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
+            icon  = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null) },
             label = { Text("Queue") },
             selected = currentRoute == Screen.Queue.route,
             onClick = {

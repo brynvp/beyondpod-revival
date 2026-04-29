@@ -1,5 +1,6 @@
 package mobi.beyondpod.revival.data.repository
 
+import android.text.Html
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
@@ -14,6 +15,7 @@ import mobi.beyondpod.revival.data.local.entity.PlaylistRuleMode
 import mobi.beyondpod.revival.data.local.entity.SmartPlaylistBlock
 import mobi.beyondpod.revival.data.parser.FeedParser
 import mobi.beyondpod.revival.data.parser.ParsedEpisode
+import mobi.beyondpod.revival.data.parser.ParsedFeed
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -39,7 +41,7 @@ class FeedRepositoryImpl @Inject constructor(
         val existing = feedDao.getFeedByUrl(url)
         if (existing != null) return@runCatching existing
 
-        val parsed = fetchAndParse(url).getOrNull()
+        val parsed = fetchAndParse(url).getOrNull()?.first
         val placeholder = FeedEntity(
             url          = url,
             title        = parsed?.title?.ifEmpty { url } ?: url,
@@ -58,6 +60,10 @@ class FeedRepositoryImpl @Inject constructor(
 
     override suspend fun updateFeedProperties(feed: FeedEntity): Result<Unit> = runCatching {
         feedDao.upsertFeed(feed)
+    }
+
+    override suspend fun clearStaleUpdateFailedFlags() {
+        feedDao.clearAllUpdateFailedFlags()
     }
 
     override suspend fun deleteFeed(id: Long, deleteDownloads: Boolean) {
@@ -91,33 +97,61 @@ class FeedRepositoryImpl @Inject constructor(
     /**
      * Re-fetch the RSS, update feed metadata, upsert episodes (multi-key dedup), archive removed.
      * Steps 1–4 of FeedUpdateWorker pipeline (CLAUDE.md rule #8).
+     *
+     * [markFailure] = true (default): persists lastUpdateFailed=true on error so the Feeds
+     * screen shows the red ⚠ indicator. Use true for manual pull-to-refresh only.
+     * [markFailure] = false: background worker calls — transient failures are silent so the
+     * warning icon isn't stamped on every feed if the device is temporarily offline.
+     *
+     * On redirect (301/302), persists the final URL so subsequent refreshes don't re-chase it.
      */
-    override suspend fun refreshFeed(id: Long): Result<Unit> = runCatching {
-        val feed   = feedDao.getFeedById(id) ?: return@runCatching
-        val parsed = fetchAndParse(feed.url).getOrThrow()
+    override suspend fun refreshFeed(id: Long, markFailure: Boolean): Result<Unit> {
+        val feed = feedDao.getFeedById(id) ?: return Result.success(Unit)
+        val fetchResult = fetchAndParse(feed.url)
 
-        feedDao.upsertFeed(feed.copy(
-            title            = parsed.title.ifEmpty { feed.title },
-            description      = parsed.description.ifEmpty { feed.description },
-            imageUrl         = parsed.imageUrl ?: feed.imageUrl,
-            author           = parsed.author.ifEmpty { feed.author },
-            website          = parsed.website.ifEmpty { feed.website },
-            lastUpdated      = System.currentTimeMillis(),
-            lastUpdateFailed = false,
-            lastUpdateError  = null
-        ))
-
-        val upsertedIds = mutableListOf<Long>()
-        parsed.episodes.forEach { ep ->
-            upsertedIds.add(episodeRepository.upsertEpisode(ep.toEntity(id)))
+        if (fetchResult.isFailure) {
+            val errorMsg = fetchResult.exceptionOrNull()?.message ?: "Update failed"
+            if (markFailure) {
+                runCatching {
+                    feedDao.upsertFeed(feed.copy(
+                        lastUpdateFailed = true,
+                        lastUpdateError  = errorMsg
+                    ))
+                }
+            }
+            return Result.failure(fetchResult.exceptionOrNull() ?: Exception(errorMsg))
         }
-        if (upsertedIds.isNotEmpty()) {
-            episodeDao.archiveRemovedEpisodes(id, upsertedIds)
+
+        return runCatching {
+            val (parsed, finalUrl) = fetchResult.getOrThrow()
+
+            feedDao.upsertFeed(feed.copy(
+                url              = finalUrl,  // persist redirected URL if it changed
+                title            = parsed.title.ifEmpty { feed.title },
+                description      = parsed.description.ifEmpty { feed.description },
+                imageUrl         = parsed.imageUrl ?: feed.imageUrl,
+                author           = parsed.author.ifEmpty { feed.author },
+                website          = parsed.website.ifEmpty { feed.website },
+                lastUpdated      = System.currentTimeMillis(),
+                lastUpdateFailed = false,
+                lastUpdateError  = null
+            ))
+
+            val upsertedIds = mutableListOf<Long>()
+            parsed.episodes.forEach { ep ->
+                upsertedIds.add(episodeRepository.upsertEpisode(ep.toEntity(id)))
+            }
+            if (upsertedIds.isNotEmpty()) {
+                episodeDao.archiveRemovedEpisodes(id, upsertedIds)
+            }
         }
     }
 
     override suspend fun refreshAllFeeds(): Result<Unit> = runCatching {
-        feedDao.getAllFeedsList().forEach { feed -> refreshFeed(feed.id) }
+        // markFailure=false: bulk refresh — individual feed failures are transient and should
+        // not stamp every feed with a warning. Per-feed errors only surface on single-feed
+        // manual pull-to-refresh in FeedDetailScreen (which uses the default markFailure=true).
+        feedDao.getAllFeedsList().forEach { feed -> refreshFeed(feed.id, markFailure = false) }
     }
 
     override suspend fun moveFeedToCategory(feedId: Long, categoryId: Long?, isPrimary: Boolean) {
@@ -165,19 +199,35 @@ class FeedRepositoryImpl @Inject constructor(
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun fetchAndParse(url: String) = runCatching {
+    /**
+     * Fetch and parse the RSS at [url]. Returns (ParsedFeed, finalUrl) where finalUrl is the
+     * URL OkHttp actually landed on after any 301/302 redirects — may differ from [url].
+     */
+    private fun fetchAndParse(url: String): Result<Pair<ParsedFeed, String>> = runCatching {
         val req = Request.Builder().url(url).header("User-Agent", "BeyondPodRevival/5.0").build()
         okHttpClient.newCall(req).execute().use { resp ->
             check(resp.isSuccessful) { "HTTP ${resp.code} for $url" }
-            feedParser.parse(resp.body?.byteStream() ?: error("Empty response body"))
+            val parsed = feedParser.parse(resp.body?.byteStream() ?: error("Empty response body"))
+            Pair(parsed, resp.request.url.toString())
         }
+    }
+
+    /**
+     * Strip HTML tags and decode entities from RSS description fields.
+     * content:encoded in particular is always full HTML. Applied once at storage time
+     * so every consumer (UI, search, notifications) always sees clean plain text.
+     */
+    private fun String.stripHtml(): String {
+        if (isBlank()) return this
+        @Suppress("DEPRECATION")
+        return Html.fromHtml(this, Html.FROM_HTML_MODE_COMPACT).toString().trim()
     }
 
     private fun ParsedEpisode.toEntity(feedId: Long) = EpisodeEntity(
         feedId        = feedId,
         guid          = guid.ifEmpty { url },
         title         = title,
-        description   = description,
+        description   = description.stripHtml(),
         pubDate       = pubDate,
         url           = url,
         mimeType      = mimeType,

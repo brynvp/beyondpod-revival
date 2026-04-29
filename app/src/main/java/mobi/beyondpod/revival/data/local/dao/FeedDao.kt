@@ -42,6 +42,10 @@ interface FeedDao {
     @Query("UPDATE feeds SET lastUpdated = :timestamp, lastUpdateFailed = 0 WHERE id = :feedId")
     suspend fun markFeedUpdated(feedId: Long, timestamp: Long)
 
+    /** One-time repair: clears stale lastUpdateFailed flags left by the old background-worker bug. */
+    @Query("UPDATE feeds SET lastUpdateFailed = 0, lastUpdateError = NULL WHERE lastUpdateFailed = 1")
+    suspend fun clearAllUpdateFailedFlags()
+
     @Query("UPDATE feeds SET sortOrder = :sortOrder WHERE id = :feedId")
     suspend fun updateSortOrder(feedId: Long, sortOrder: Int)
 

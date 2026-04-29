@@ -17,6 +17,7 @@ import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.repository.CategoryRepository
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
+import mobi.beyondpod.revival.data.repository.DownloadRepository
 import mobi.beyondpod.revival.domain.usecase.download.EnqueueDownloadUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.DeleteFeedUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.MoveFeedToCategoryUseCase
@@ -45,6 +46,7 @@ class FeedDetailViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val episodeRepository: EpisodeRepository,
     private val categoryRepository: CategoryRepository,
+    private val downloadRepository: DownloadRepository,
     private val deleteFeedUseCase: DeleteFeedUseCase,
     private val enqueueDownloadUseCase: EnqueueDownloadUseCase,
     private val moveFeedToCategoryUseCase: MoveFeedToCategoryUseCase
@@ -81,6 +83,7 @@ class FeedDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _isRefreshing.value = true
             feedRepository.refreshFeed(feedId)
+            downloadRepository.autoDownloadNewEpisodes(feedId)
             _isRefreshing.value = false
         }
     }

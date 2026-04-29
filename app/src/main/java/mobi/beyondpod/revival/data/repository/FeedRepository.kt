@@ -22,8 +22,13 @@ interface FeedRepository {
      */
     suspend fun deleteFeed(id: Long, deleteDownloads: Boolean)
 
-    /** Re-fetch the RSS feed and upsert episodes. Stub until Phase 3. */
-    suspend fun refreshFeed(id: Long): Result<Unit>
+    /**
+     * Re-fetch the RSS feed and upsert episodes.
+     * [markFailure] controls whether a fetch error is persisted to [FeedEntity.lastUpdateFailed].
+     * Pass true (default) for manual pull-to-refresh so the user sees the error indicator.
+     * Pass false for background worker runs — transient failures should be silent.
+     */
+    suspend fun refreshFeed(id: Long, markFailure: Boolean = true): Result<Unit>
 
     /** Refresh all feeds sequentially. Stub until Phase 3. */
     suspend fun refreshAllFeeds(): Result<Unit>
@@ -33,6 +38,12 @@ interface FeedRepository {
      * [isPrimary] determines whether this becomes the primary or secondary category slot.
      */
     suspend fun moveFeedToCategory(feedId: Long, categoryId: Long?, isPrimary: Boolean = true)
+
+    /**
+     * Reset any stale lastUpdateFailed=true flags left by the pre-fix background worker.
+     * Safe to call on every app launch — no-ops if no stale flags exist.
+     */
+    suspend fun clearStaleUpdateFailedFlags()
 
     /**
      * Parse an OPML string and subscribe to all feeds found. Returns the count of

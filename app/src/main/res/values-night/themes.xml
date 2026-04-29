@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        Dark-mode counterpart of res/values/themes.xml.
+        android:colorBackground must be declared explicitly — see values/themes.xml for the
+        full explanation of why (MediaRouteButton / MediaRouterThemeHelper requirement).
+
+        Value matches Material3's md_theme_dark_background (#FF1C1B1F).
+    -->
+    <style name="Theme.BeyondPod" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorBackground">#FF1C1B1F</item>
+    </style>
+
+</resources>
