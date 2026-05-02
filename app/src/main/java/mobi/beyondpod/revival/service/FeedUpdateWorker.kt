@@ -63,6 +63,13 @@ class FeedUpdateWorker @AssistedInject constructor(
     private suspend fun processFeed(feedId: Long) {
         val feed = feedDao.getFeedById(feedId) ?: return
 
+        // ── Virtual folder feeds: scan for new audio files, skip RSS fetch ───
+        if (feed.isVirtualFeed) {
+            feedRepository.scanFolderFeed(feedId)
+                .onFailure { /* silent — folder may have been moved or permission revoked */ }
+            return
+        }
+
         // ── Steps 1–4: Fetch, parse, dedup, upsert, archive ─────────────────
         // markFailure=false: background failures are transient — don't stamp lastUpdateFailed=true
         // on every feed when the device is briefly offline. The warning icon is only meaningful

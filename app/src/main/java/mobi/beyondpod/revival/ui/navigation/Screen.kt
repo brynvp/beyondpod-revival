@@ -29,5 +29,6 @@ sealed class Screen(val route: String) {
         const val ARG_EPISODE_ID = "episodeId"
     }
 
-    data object BackupRestore : Screen("backup_restore")
+    data object BackupRestore  : Screen("backup_restore")
+    data object AddFolderFeed  : Screen("add_folder_feed")
 }

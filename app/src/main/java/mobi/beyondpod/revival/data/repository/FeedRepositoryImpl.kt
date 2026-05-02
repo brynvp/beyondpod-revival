@@ -1,7 +1,12 @@
 package mobi.beyondpod.revival.data.repository
 
+import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.text.Html
+import androidx.documentfile.provider.DocumentFile
 import com.google.gson.Gson
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import mobi.beyondpod.revival.data.local.dao.CategoryDao
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
@@ -11,6 +16,8 @@ import mobi.beyondpod.revival.data.local.entity.BlockSource
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedCategoryCrossRef
 import mobi.beyondpod.revival.data.local.entity.CategoryEntity
+import mobi.beyondpod.revival.data.local.entity.DownloadStateEnum
+import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.local.entity.PlayState
 import mobi.beyondpod.revival.data.local.entity.PlaylistRuleMode
@@ -30,7 +37,8 @@ class FeedRepositoryImpl @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val feedParser: FeedParser,
     private val smartPlaylistDao: SmartPlaylistDao,
-    private val gson: Gson
+    private val gson: Gson,
+    @ApplicationContext private val context: Context
 ) : FeedRepository {
 
     override fun getAllFeeds(): Flow<List<FeedEntity>> = feedDao.getAllFeeds()
@@ -253,6 +261,84 @@ class FeedRepositoryImpl @Inject constructor(
             }
             appendLine("""  </body>""")
             appendLine("""</opml>""")
+        }
+    }
+
+    // ── Virtual folder feeds ──────────────────────────────────────────────────
+
+    override suspend fun addFolderFeed(folderUri: String, displayName: String): Result<FeedEntity> = runCatching {
+        // Return existing feed if this folder is already subscribed
+        feedDao.getFeedByUrl(folderUri)?.let { return@runCatching it }
+
+        val id = feedDao.upsertFeed(FeedEntity(
+            url              = folderUri,
+            title            = displayName.ifEmpty { "Local Folder" },
+            isVirtualFeed    = true,
+            virtualFeedFolderPath = folderUri,
+            fingerprintType  = -1,
+            downloadStrategy = DownloadStrategy.MANUAL   // local files — nothing to auto-download
+        ))
+        feedDao.getFeedById(id)!!
+    }
+
+    override suspend fun scanFolderFeed(feedId: Long): Result<Int> = runCatching {
+        val feed = feedDao.getFeedById(feedId) ?: return@runCatching 0
+        val folderUriStr = feed.virtualFeedFolderPath ?: return@runCatching 0
+
+        val folder = DocumentFile.fromTreeUri(context, Uri.parse(folderUriStr))
+            ?: return@runCatching 0
+
+        var count = 0
+        for (file in folder.listFiles()) {
+            if (!file.isFile) continue
+            val mimeType = file.type ?: continue
+            if (!isAudioMimeType(mimeType)) continue
+
+            val fileUriStr = file.uri.toString()
+
+            // Dedup by GUID (the content URI is stable for the same file)
+            if (episodeDao.getEpisodeByGuid(fileUriStr, feedId) != null) continue
+
+            val (title, durationMs, artist) = extractAudioMetadata(file.uri)
+
+            episodeDao.upsertEpisode(EpisodeEntity(
+                feedId        = feedId,
+                guid          = fileUriStr,
+                url           = fileUriStr,
+                title         = title.ifEmpty { file.name ?: fileUriStr },
+                mimeType      = mimeType,
+                fileSizeBytes = file.length(),
+                duration      = durationMs,
+                pubDate       = file.lastModified(),
+                author        = artist,
+                downloadState = DownloadStateEnum.DOWNLOADED,
+                localFilePath = fileUriStr,
+                downloadedAt  = file.lastModified()
+            ))
+            count++
+        }
+        count
+    }
+
+    private fun isAudioMimeType(mimeType: String): Boolean =
+        mimeType.startsWith("audio/") ||
+        mimeType == "application/ogg" ||
+        mimeType == "video/mp4"   // some m4a/AAC files reported as video/mp4
+
+    private fun extractAudioMetadata(uri: Uri): Triple<String, Long, String> {
+        return try {
+            MediaMetadataRetriever().use { retriever ->
+                retriever.setDataSource(context, uri)
+                val title  = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
+                val durMs  = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                ?.toLongOrNull() ?: 0L
+                val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                                ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
+                                ?: ""
+                Triple(title, durMs, artist)
+            }
+        } catch (e: Exception) {
+            Triple("", 0L, "")
         }
     }
 

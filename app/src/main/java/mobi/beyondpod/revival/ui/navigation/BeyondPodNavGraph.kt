@@ -16,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import mobi.beyondpod.revival.ui.player.PlaybackViewModel
 import mobi.beyondpod.revival.ui.screens.addfeed.AddFeedScreen
+import mobi.beyondpod.revival.ui.screens.addfeed.AddFolderFeedScreen
 import mobi.beyondpod.revival.ui.screens.search.PodcastSearchScreen
 import mobi.beyondpod.revival.ui.screens.category.CategoryManagementScreen
 import mobi.beyondpod.revival.ui.screens.feeddetail.FeedDetailScreen
@@ -129,6 +130,11 @@ fun BeyondPodNavGraph(
         // ── Backup & Restore ──────────────────────────────────────────────────
         composable(Screen.BackupRestore.route) {
             BackupRestoreScreen(navController = navController)
+        }
+
+        // ── Add Folder Feed ───────────────────────────────────────────────────
+        composable(Screen.AddFolderFeed.route) {
+            AddFolderFeedScreen(navController = navController)
         }
     }
 }

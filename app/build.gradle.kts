@@ -96,6 +96,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
+    // DocumentFile (SAF helper for virtual folder feeds)
+    implementation(libs.documentfile)
+
     // WorkManager
     implementation(libs.work.runtime.ktx)
 

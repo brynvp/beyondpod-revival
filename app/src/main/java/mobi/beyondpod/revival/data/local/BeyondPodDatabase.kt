@@ -45,7 +45,7 @@ import mobi.beyondpod.revival.data.local.entity.SyncStateEntity
         ChangeHistoryEntity::class,           // Subscription change log (gPodder sync diffs)
         ScheduledTaskEntity::class            // User-defined scheduled update tasks
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -110,6 +110,28 @@ abstract class BeyondPodDatabase : RoomDatabase() {
             }
         }
 
+        // ── Migration 4 → 5: add virtual folder feed columns to feeds table ────────
+        // isVirtualFeed and virtualFeedFolderPath exist in FeedEntity from day one, so
+        // fresh installs already have both columns (Room created the full schema at v1).
+        // Existing installs that went through v1→4 migrations also have them for the same
+        // reason. Guard with PRAGMA table_info to avoid "duplicate column name" crashes.
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val cursor = db.query("PRAGMA table_info(feeds)")
+                val existingCols = mutableSetOf<String>()
+                while (cursor.moveToNext()) {
+                    existingCols.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+                }
+                cursor.close()
+                if (!existingCols.contains("isVirtualFeed")) {
+                    db.execSQL("ALTER TABLE feeds ADD COLUMN isVirtualFeed INTEGER NOT NULL DEFAULT 0")
+                }
+                if (!existingCols.contains("virtualFeedFolderPath")) {
+                    db.execSQL("ALTER TABLE feeds ADD COLUMN virtualFeedFolderPath TEXT")
+                }
+            }
+        }
+
         /**
          * Singleton accessor for non-Hilt contexts (e.g., widget [RemoteViewsFactory]).
          * Hilt's [DatabaseModule] uses all migrations; this accessor does too.
@@ -123,7 +145,7 @@ abstract class BeyondPodDatabase : RoomDatabase() {
                     BeyondPodDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .build()
                     .also { widgetInstance = it }

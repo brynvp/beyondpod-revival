@@ -21,9 +21,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -34,6 +38,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -62,6 +69,7 @@ fun FeedListScreen(
 ) {
     val uiState      by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    var showAddMenu  by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -75,11 +83,34 @@ fun FeedListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { navController.navigate(Screen.AddFeed.route) },
-                modifier = Modifier.semantics { contentDescription = "Add podcast" }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
+            Box {
+                FloatingActionButton(
+                    onClick = { showAddMenu = true },
+                    modifier = Modifier.semantics { contentDescription = "Add" }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                }
+                DropdownMenu(
+                    expanded = showAddMenu,
+                    onDismissRequest = { showAddMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Add Podcast") },
+                        leadingIcon = { Icon(Icons.Default.Podcasts, contentDescription = null) },
+                        onClick = {
+                            showAddMenu = false
+                            navController.navigate(Screen.AddFeed.route)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Add Folder") },
+                        leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                        onClick = {
+                            showAddMenu = false
+                            navController.navigate(Screen.AddFolderFeed.route)
+                        }
+                    )
+                }
             }
         }
     ) { innerPadding ->

@@ -52,6 +52,9 @@ gson = "2.11.0"
 # Reorderable LazyList (sh.calvin.reorderable — used for drag-to-reorder in queue/playlists)
 reorderable = "2.1.1"
 
+# DocumentFile (SAF helper for virtual folder feeds)
+documentfile = "1.0.1"
+
 # Testing
 junit = "4.13.2"
 junitVersion = "1.2.1"
@@ -136,6 +139,9 @@ reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.r
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
+
+# ── DocumentFile ─────────────────────────────────────────────────────────────
+documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 
 # ── Legacy aliases (kept for existing references) ────────────────────────────
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

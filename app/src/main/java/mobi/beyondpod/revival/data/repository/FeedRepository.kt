@@ -53,4 +53,16 @@ interface FeedRepository {
 
     /** Serialize all feed subscriptions to an OPML XML string. */
     suspend fun exportToOpml(): Result<String>
+
+    /**
+     * Create a virtual feed backed by a local folder (SAF content:// tree URI).
+     * The folder will be scanned immediately after creation. Returns the new [FeedEntity].
+     */
+    suspend fun addFolderFeed(folderUri: String, displayName: String): Result<FeedEntity>
+
+    /**
+     * Scan a virtual folder feed for new audio files and upsert an [EpisodeEntity]
+     * for each one not already in the DB. Returns count of newly added episodes.
+     */
+    suspend fun scanFolderFeed(feedId: Long): Result<Int>
 }

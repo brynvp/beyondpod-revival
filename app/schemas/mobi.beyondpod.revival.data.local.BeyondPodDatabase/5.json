@@ -1,0 +1,1320 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "73827e70cc01017c5ffd051326a5936a",
+    "entities": [
+      {
+        "tableName": "feeds",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `url` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `imageUrl` TEXT, `author` TEXT NOT NULL, `website` TEXT NOT NULL, `language` TEXT NOT NULL, `primaryCategoryId` INTEGER, `secondaryCategoryId` INTEGER, `isVirtualFeed` INTEGER NOT NULL, `virtualFeedFolderPath` TEXT, `sortOrder` INTEGER NOT NULL, `priority` INTEGER NOT NULL, `authUsername` TEXT, `hasAuthPassword` INTEGER NOT NULL, `autoUpdate` INTEGER, `updateIntervalMinutes` INTEGER, `updateSchedule` TEXT, `downloadStrategy` TEXT NOT NULL, `downloadCount` INTEGER, `maxEpisodesToKeep` INTEGER, `downloadOnlyOnWifi` INTEGER, `allowCleanupForManual` INTEGER NOT NULL, `playbackSpeed` REAL, `skipIntroSeconds` INTEGER NOT NULL, `skipOutroSeconds` INTEGER NOT NULL, `playbackVolumeBoost` INTEGER NOT NULL, `episodeSortOrder` TEXT, `displayType` INTEGER NOT NULL, `showDescription` INTEGER NOT NULL, `useCustomImage` INTEGER NOT NULL, `customImagePath` TEXT, `lastUpdated` INTEGER NOT NULL, `lastUpdateFailed` INTEGER NOT NULL, `lastUpdateError` TEXT, `useGoogleProxy` INTEGER NOT NULL, `maxTrackAgeDays` INTEGER NOT NULL, `fingerprintType` INTEGER NOT NULL, `audioSettingsSpeedIndex` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `isHidden` INTEGER NOT NULL, `gpodderSubscribed` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageUrl",
+            "columnName": "imageUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "website",
+            "columnName": "website",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "primaryCategoryId",
+            "columnName": "primaryCategoryId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "secondaryCategoryId",
+            "columnName": "secondaryCategoryId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isVirtualFeed",
+            "columnName": "isVirtualFeed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "virtualFeedFolderPath",
+            "columnName": "virtualFeedFolderPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priority",
+            "columnName": "priority",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authUsername",
+            "columnName": "authUsername",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hasAuthPassword",
+            "columnName": "hasAuthPassword",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "autoUpdate",
+            "columnName": "autoUpdate",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updateIntervalMinutes",
+            "columnName": "updateIntervalMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updateSchedule",
+            "columnName": "updateSchedule",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "downloadStrategy",
+            "columnName": "downloadStrategy",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadCount",
+            "columnName": "downloadCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "maxEpisodesToKeep",
+            "columnName": "maxEpisodesToKeep",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "downloadOnlyOnWifi",
+            "columnName": "downloadOnlyOnWifi",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "allowCleanupForManual",
+            "columnName": "allowCleanupForManual",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playbackSpeed",
+            "columnName": "playbackSpeed",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "skipIntroSeconds",
+            "columnName": "skipIntroSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skipOutroSeconds",
+            "columnName": "skipOutroSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playbackVolumeBoost",
+            "columnName": "playbackVolumeBoost",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeSortOrder",
+            "columnName": "episodeSortOrder",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "displayType",
+            "columnName": "displayType",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "showDescription",
+            "columnName": "showDescription",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "useCustomImage",
+            "columnName": "useCustomImage",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customImagePath",
+            "columnName": "customImagePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdateFailed",
+            "columnName": "lastUpdateFailed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdateError",
+            "columnName": "lastUpdateError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "useGoogleProxy",
+            "columnName": "useGoogleProxy",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxTrackAgeDays",
+            "columnName": "maxTrackAgeDays",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprintType",
+            "columnName": "fingerprintType",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioSettingsSpeedIndex",
+            "columnName": "audioSettingsSpeedIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isHidden",
+            "columnName": "isHidden",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gpodderSubscribed",
+            "columnName": "gpodderSubscribed",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_feeds_primaryCategoryId",
+            "unique": false,
+            "columnNames": [
+              "primaryCategoryId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_feeds_primaryCategoryId` ON `${TABLE_NAME}` (`primaryCategoryId`)"
+          },
+          {
+            "name": "index_feeds_downloadStrategy",
+            "unique": false,
+            "columnNames": [
+              "downloadStrategy"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_feeds_downloadStrategy` ON `${TABLE_NAME}` (`downloadStrategy`)"
+          }
+        ]
+      },
+      {
+        "tableName": "feed_category_cross_ref",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`feedId` INTEGER NOT NULL, `categoryId` INTEGER NOT NULL, `isPrimary` INTEGER NOT NULL, PRIMARY KEY(`feedId`, `categoryId`), FOREIGN KEY(`feedId`) REFERENCES `feeds`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "feedId",
+            "columnName": "feedId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "categoryId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPrimary",
+            "columnName": "isPrimary",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "feedId",
+            "categoryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_feed_category_cross_ref_feedId",
+            "unique": false,
+            "columnNames": [
+              "feedId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_feed_category_cross_ref_feedId` ON `${TABLE_NAME}` (`feedId`)"
+          },
+          {
+            "name": "index_feed_category_cross_ref_categoryId",
+            "unique": false,
+            "columnNames": [
+              "categoryId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_feed_category_cross_ref_categoryId` ON `${TABLE_NAME}` (`categoryId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "feeds",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "feedId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "categories",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "categoryId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "episodes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `feedId` INTEGER NOT NULL, `guid` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `htmlDescription` TEXT NOT NULL, `pubDate` INTEGER NOT NULL, `url` TEXT NOT NULL, `mimeType` TEXT NOT NULL, `fileSizeBytes` INTEGER NOT NULL, `duration` INTEGER NOT NULL, `imageUrl` TEXT, `author` TEXT NOT NULL, `chapterUrl` TEXT, `transcriptUrl` TEXT, `playState` TEXT NOT NULL, `playPosition` INTEGER NOT NULL, `playedFraction` REAL NOT NULL, `playCount` INTEGER NOT NULL, `lastPlayed` INTEGER, `isStarred` INTEGER NOT NULL, `isProtected` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `lastAccessed` INTEGER, `downloadState` TEXT NOT NULL, `localFilePath` TEXT, `downloadedAt` INTEGER, `downloadId` INTEGER, `downloadProgress` INTEGER NOT NULL, `downloadBytesDownloaded` INTEGER NOT NULL, `downloadTotalBytes` INTEGER NOT NULL, `isInMyEpisodes` INTEGER NOT NULL, `addedToMyEpisodes` INTEGER, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`feedId`) REFERENCES `feeds`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feedId",
+            "columnName": "feedId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "guid",
+            "columnName": "guid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "htmlDescription",
+            "columnName": "htmlDescription",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pubDate",
+            "columnName": "pubDate",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileSizeBytes",
+            "columnName": "fileSizeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "duration",
+            "columnName": "duration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageUrl",
+            "columnName": "imageUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chapterUrl",
+            "columnName": "chapterUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "transcriptUrl",
+            "columnName": "transcriptUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "playState",
+            "columnName": "playState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playPosition",
+            "columnName": "playPosition",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playedFraction",
+            "columnName": "playedFraction",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playCount",
+            "columnName": "playCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastPlayed",
+            "columnName": "lastPlayed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isStarred",
+            "columnName": "isStarred",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isProtected",
+            "columnName": "isProtected",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isArchived",
+            "columnName": "isArchived",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAccessed",
+            "columnName": "lastAccessed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "downloadState",
+            "columnName": "downloadState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localFilePath",
+            "columnName": "localFilePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "downloadedAt",
+            "columnName": "downloadedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "downloadId",
+            "columnName": "downloadId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "downloadProgress",
+            "columnName": "downloadProgress",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadBytesDownloaded",
+            "columnName": "downloadBytesDownloaded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadTotalBytes",
+            "columnName": "downloadTotalBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isInMyEpisodes",
+            "columnName": "isInMyEpisodes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedToMyEpisodes",
+            "columnName": "addedToMyEpisodes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_episodes_feedId",
+            "unique": false,
+            "columnNames": [
+              "feedId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_feedId` ON `${TABLE_NAME}` (`feedId`)"
+          },
+          {
+            "name": "index_episodes_guid",
+            "unique": false,
+            "columnNames": [
+              "guid"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_guid` ON `${TABLE_NAME}` (`guid`)"
+          },
+          {
+            "name": "index_episodes_pubDate",
+            "unique": false,
+            "columnNames": [
+              "pubDate"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_pubDate` ON `${TABLE_NAME}` (`pubDate`)"
+          },
+          {
+            "name": "index_episodes_playState",
+            "unique": false,
+            "columnNames": [
+              "playState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_playState` ON `${TABLE_NAME}` (`playState`)"
+          },
+          {
+            "name": "index_episodes_downloadState",
+            "unique": false,
+            "columnNames": [
+              "downloadState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_downloadState` ON `${TABLE_NAME}` (`downloadState`)"
+          },
+          {
+            "name": "index_episodes_downloadedAt",
+            "unique": false,
+            "columnNames": [
+              "downloadedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_downloadedAt` ON `${TABLE_NAME}` (`downloadedAt`)"
+          },
+          {
+            "name": "index_episodes_isStarred",
+            "unique": false,
+            "columnNames": [
+              "isStarred"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_isStarred` ON `${TABLE_NAME}` (`isStarred`)"
+          },
+          {
+            "name": "index_episodes_lastPlayed",
+            "unique": false,
+            "columnNames": [
+              "lastPlayed"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_lastPlayed` ON `${TABLE_NAME}` (`lastPlayed`)"
+          },
+          {
+            "name": "index_episodes_feedId_pubDate",
+            "unique": false,
+            "columnNames": [
+              "feedId",
+              "pubDate"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_feedId_pubDate` ON `${TABLE_NAME}` (`feedId`, `pubDate`)"
+          },
+          {
+            "name": "index_episodes_feedId_playState",
+            "unique": false,
+            "columnNames": [
+              "feedId",
+              "playState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_feedId_playState` ON `${TABLE_NAME}` (`feedId`, `playState`)"
+          },
+          {
+            "name": "index_episodes_feedId_downloadState",
+            "unique": false,
+            "columnNames": [
+              "feedId",
+              "downloadState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_feedId_downloadState` ON `${TABLE_NAME}` (`feedId`, `downloadState`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "feeds",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "feedId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "categories",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `color` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, `isExpanded` INTEGER NOT NULL, `parentCategoryId` INTEGER, `autoUpdate` INTEGER NOT NULL, `updateIntervalMinutes` INTEGER, `updateSchedule` TEXT, `downloadOnlyOnWifi` INTEGER, `autoDownload` INTEGER, `downloadCount` INTEGER, `maxEpisodesToKeep` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "color",
+            "columnName": "color",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isExpanded",
+            "columnName": "isExpanded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentCategoryId",
+            "columnName": "parentCategoryId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "autoUpdate",
+            "columnName": "autoUpdate",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updateIntervalMinutes",
+            "columnName": "updateIntervalMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updateSchedule",
+            "columnName": "updateSchedule",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "downloadOnlyOnWifi",
+            "columnName": "downloadOnlyOnWifi",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "autoDownload",
+            "columnName": "autoDownload",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "downloadCount",
+            "columnName": "downloadCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "maxEpisodesToKeep",
+            "columnName": "maxEpisodesToKeep",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "smart_playlists",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `isDefault` INTEGER NOT NULL, `ruleMode` TEXT NOT NULL, `rulesJson` TEXT NOT NULL, `maxItems` INTEGER NOT NULL, `episodeSortOrder` TEXT NOT NULL, `autoPlay` INTEGER NOT NULL, `continueOnComplete` INTEGER NOT NULL, `onEmptyAction` TEXT NOT NULL, `iconResName` TEXT, `playbackSpeedOverride` REAL, `volumeBoostOverride` INTEGER, `skipSilenceOverride` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "isDefault",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ruleMode",
+            "columnName": "ruleMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rulesJson",
+            "columnName": "rulesJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxItems",
+            "columnName": "maxItems",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeSortOrder",
+            "columnName": "episodeSortOrder",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "autoPlay",
+            "columnName": "autoPlay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "continueOnComplete",
+            "columnName": "continueOnComplete",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "onEmptyAction",
+            "columnName": "onEmptyAction",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "iconResName",
+            "columnName": "iconResName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "playbackSpeedOverride",
+            "columnName": "playbackSpeedOverride",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "volumeBoostOverride",
+            "columnName": "volumeBoostOverride",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "skipSilenceOverride",
+            "columnName": "skipSilenceOverride",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "manual_playlist_episodes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlistId` INTEGER NOT NULL, `episodeId` INTEGER NOT NULL, `position` INTEGER NOT NULL, PRIMARY KEY(`playlistId`, `episodeId`))",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlistId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeId",
+            "columnName": "episodeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlistId",
+            "episodeId"
+          ]
+        }
+      },
+      {
+        "tableName": "queue_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sourcePlaylistId` INTEGER, `generatedAt` INTEGER NOT NULL, `isActive` INTEGER NOT NULL, `currentItemIndex` INTEGER NOT NULL, `currentItemPositionMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourcePlaylistId",
+            "columnName": "sourcePlaylistId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "generatedAt",
+            "columnName": "generatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isActive",
+            "columnName": "isActive",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentItemIndex",
+            "columnName": "currentItemIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentItemPositionMs",
+            "columnName": "currentItemPositionMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "queue_snapshot_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `snapshotId` INTEGER NOT NULL, `episodeId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `episodeTitleSnapshot` TEXT NOT NULL, `feedTitleSnapshot` TEXT NOT NULL, `localFilePathSnapshot` TEXT, `episodeUrlSnapshot` TEXT NOT NULL, FOREIGN KEY(`snapshotId`) REFERENCES `queue_snapshots`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotId",
+            "columnName": "snapshotId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeId",
+            "columnName": "episodeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeTitleSnapshot",
+            "columnName": "episodeTitleSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feedTitleSnapshot",
+            "columnName": "feedTitleSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localFilePathSnapshot",
+            "columnName": "localFilePathSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "episodeUrlSnapshot",
+            "columnName": "episodeUrlSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_queue_snapshot_items_snapshotId",
+            "unique": false,
+            "columnNames": [
+              "snapshotId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_queue_snapshot_items_snapshotId` ON `${TABLE_NAME}` (`snapshotId`)"
+          },
+          {
+            "name": "index_queue_snapshot_items_position",
+            "unique": false,
+            "columnNames": [
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_queue_snapshot_items_position` ON `${TABLE_NAME}` (`position`)"
+          },
+          {
+            "name": "index_queue_snapshot_items_snapshotId_position",
+            "unique": false,
+            "columnNames": [
+              "snapshotId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_queue_snapshot_items_snapshotId_position` ON `${TABLE_NAME}` (`snapshotId`, `position`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "queue_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "snapshotId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "download_queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`episodeId` INTEGER NOT NULL, `queuePosition` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, `retryCount` INTEGER NOT NULL, PRIMARY KEY(`episodeId`))",
+        "fields": [
+          {
+            "fieldPath": "episodeId",
+            "columnName": "episodeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "queuePosition",
+            "columnName": "queuePosition",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "addedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retryCount",
+            "columnName": "retryCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "episodeId"
+          ]
+        }
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `provider` TEXT NOT NULL, `username` TEXT, `serverUrl` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `lastSyncTimestamp` INTEGER NOT NULL, `syncEnabled` INTEGER NOT NULL, `syncEpisodeState` INTEGER NOT NULL, `syncSubscriptions` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "username",
+            "columnName": "username",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serverUrl",
+            "columnName": "serverUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncTimestamp",
+            "columnName": "lastSyncTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncEnabled",
+            "columnName": "syncEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncEpisodeState",
+            "columnName": "syncEpisodeState",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncSubscriptions",
+            "columnName": "syncSubscriptions",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "episode_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `episodeId` INTEGER NOT NULL, `episodeGuid` TEXT NOT NULL, `feedUrl` TEXT NOT NULL, `episodeUrl` TEXT NOT NULL, `eventTimestamp` INTEGER NOT NULL, `entryType` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeId",
+            "columnName": "episodeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeGuid",
+            "columnName": "episodeGuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feedUrl",
+            "columnName": "feedUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeUrl",
+            "columnName": "episodeUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventTimestamp",
+            "columnName": "eventTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryType",
+            "columnName": "entryType",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "positionMs",
+            "columnName": "positionMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_episode_history_episodeId",
+            "unique": false,
+            "columnNames": [
+              "episodeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episode_history_episodeId` ON `${TABLE_NAME}` (`episodeId`)"
+          },
+          {
+            "name": "index_episode_history_eventTimestamp",
+            "unique": false,
+            "columnNames": [
+              "eventTimestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episode_history_eventTimestamp` ON `${TABLE_NAME}` (`eventTimestamp`)"
+          }
+        ]
+      },
+      {
+        "tableName": "change_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `feedUrl` TEXT NOT NULL, `changeType` TEXT NOT NULL, `changedAt` INTEGER NOT NULL, `syncedAt` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feedUrl",
+            "columnName": "feedUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "changeType",
+            "columnName": "changeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "changedAt",
+            "columnName": "changedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedAt",
+            "columnName": "syncedAt",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "scheduled_tasks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `taskType` TEXT NOT NULL, `targetId` INTEGER, `cronExpression` TEXT, `isEnabled` INTEGER NOT NULL, `lastExecutedAt` INTEGER, `workManagerTag` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskType",
+            "columnName": "taskType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cronExpression",
+            "columnName": "cronExpression",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isEnabled",
+            "columnName": "isEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastExecutedAt",
+            "columnName": "lastExecutedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "workManagerTag",
+            "columnName": "workManagerTag",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '73827e70cc01017c5ffd051326a5936a')"
+    ]
+  }
+}

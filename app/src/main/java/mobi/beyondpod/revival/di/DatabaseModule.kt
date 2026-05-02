@@ -24,7 +24,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(app: Application): BeyondPodDatabase =
         Room.databaseBuilder(app, BeyondPodDatabase::class.java, BeyondPodDatabase.DATABASE_NAME)
-            .addMigrations(BeyondPodDatabase.MIGRATION_1_2, BeyondPodDatabase.MIGRATION_2_3, BeyondPodDatabase.MIGRATION_3_4)
+            .addMigrations(BeyondPodDatabase.MIGRATION_1_2, BeyondPodDatabase.MIGRATION_2_3, BeyondPodDatabase.MIGRATION_3_4, BeyondPodDatabase.MIGRATION_4_5)
             // WAL mode: reads never block writes (DownloadWorker writes while UI reads)
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
             .build()
