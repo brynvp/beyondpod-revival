@@ -47,7 +47,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import android.content.ContextWrapper
+import android.content.res.Resources
+import android.view.ContextThemeWrapper
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.mediarouter.app.MediaRouteButton
@@ -98,12 +99,23 @@ fun PlayerScreen(
     //   colorBackground definitively overrides the 0.
     val baseCtx = LocalContext.current
     val castCtx = remember(baseCtx) {
-        object : ContextWrapper(baseCtx) {
-            private val _theme = baseCtx.resources.newTheme().also { t ->
-                t.setTo(baseCtx.theme)                          // inherit base colours/styles
-                t.applyStyle(R.style.Theme_BeyondPod, true)     // force=true wins over the 0
+        // WHY ContextThemeWrapper and not plain ContextWrapper:
+        //   ContextWrapper.obtainStyledAttributes delegates to mBase, bypassing getTheme().
+        //   obtainStyledAttributes is final in Context so we can't override it ourselves.
+        //   ContextThemeWrapper DOES override obtainStyledAttributes to call this.getTheme(),
+        //   so subclassing it and overriding getTheme() works end-to-end.
+        //
+        // WHY a fresh theme with no setTo():
+        //   Compose's composition context has android:colorBackground = 0 explicitly set.
+        //   Copying it via setTo() then applying with force=true still loses in some cases.
+        //   Starting from a blank theme and applying Theme_BeyondPod (which has
+        //   android:colorBackground = #FFFAFAFA directly declared) means there is no 0 to
+        //   compete with. applyStyle walks the parent chain so colorPrimary etc. are still set.
+        object : ContextThemeWrapper(baseCtx, R.style.Theme_BeyondPod) {
+            private val _theme: Resources.Theme = baseCtx.resources.newTheme().also { t ->
+                t.applyStyle(R.style.Theme_BeyondPod, true)
             }
-            override fun getTheme() = _theme
+            override fun getTheme(): Resources.Theme = _theme
         }
     }
 
