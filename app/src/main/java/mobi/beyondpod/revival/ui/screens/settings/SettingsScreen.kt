@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import mobi.beyondpod.revival.ui.navigation.Screen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -285,6 +286,17 @@ fun SettingsScreen(
             }
             item { HorizontalDivider() }
 
+            // ── Backup & Restore ──────────────────────────────────────────────
+            item { SectionHeader("Backup & Restore", Icons.Default.CloudSync) }
+            item {
+                PrefItem(
+                    title = "Backup & Restore",
+                    subtitle = "Import/export feeds (OPML) and app settings",
+                    onClick = { navController.navigate(Screen.BackupRestore.route) }
+                )
+            }
+            item { HorizontalDivider() }
+
             // ── About ─────────────────────────────────────────────────────────
             item { SectionHeader("About", Icons.Default.Info) }
             item {
@@ -419,12 +431,22 @@ private fun <T> ListPref(
 }
 
 @Composable
-private fun PrefItem(title: String, subtitle: String? = null) {
-    Column(
-        modifier = Modifier
+private fun PrefItem(
+    title: String,
+    subtitle: String? = null,
+    onClick: (() -> Unit)? = null
+) {
+    val modifier = if (onClick != null) {
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    } else {
+        Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
+    }
+    Column(modifier = modifier) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         if (subtitle != null) {
             Text(

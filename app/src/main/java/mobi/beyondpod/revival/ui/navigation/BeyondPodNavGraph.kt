@@ -26,6 +26,7 @@ import mobi.beyondpod.revival.ui.screens.player.PlayerScreen
 import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistDetailScreen
 import mobi.beyondpod.revival.ui.screens.playlist.SmartPlaylistListScreen
 import mobi.beyondpod.revival.ui.screens.queue.QueueScreen
+import mobi.beyondpod.revival.ui.screens.backup.BackupRestoreScreen
 import mobi.beyondpod.revival.ui.screens.settings.SettingsScreen
 
 @Composable
@@ -123,6 +124,11 @@ fun BeyondPodNavGraph(
         // ── Podcast search / discovery ────────────────────────────────────────
         composable(Screen.PodcastSearch.route) {
             PodcastSearchScreen(navController = navController)
+        }
+
+        // ── Backup & Restore ──────────────────────────────────────────────────
+        composable(Screen.BackupRestore.route) {
+            BackupRestoreScreen(navController = navController)
         }
     }
 }
