@@ -3,12 +3,14 @@ package mobi.beyondpod.revival.data.repository
 import android.text.Html
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
+import mobi.beyondpod.revival.data.local.dao.CategoryDao
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
 import mobi.beyondpod.revival.data.local.dao.SmartPlaylistDao
 import mobi.beyondpod.revival.data.local.entity.BlockSource
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedCategoryCrossRef
+import mobi.beyondpod.revival.data.local.entity.CategoryEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.local.entity.PlayState
 import mobi.beyondpod.revival.data.local.entity.PlaylistRuleMode
@@ -24,6 +26,7 @@ class FeedRepositoryImpl @Inject constructor(
     private val feedDao: FeedDao,
     private val episodeDao: EpisodeDao,
     private val episodeRepository: EpisodeRepository,
+    private val categoryDao: CategoryDao,
     private val okHttpClient: OkHttpClient,
     private val feedParser: FeedParser,
     private val smartPlaylistDao: SmartPlaylistDao,
@@ -170,27 +173,83 @@ class FeedRepositoryImpl @Inject constructor(
     override suspend fun importFromOpml(opmlContent: String): Result<Int> = runCatching {
         val outlines = feedParser.parseOpml(opmlContent)
         var count = 0
-        outlines.forEach { (xmlUrl, title, _) ->
-            if (feedDao.getFeedByUrl(xmlUrl) == null) {
-                feedDao.upsertFeed(FeedEntity(url = xmlUrl, title = title.ifEmpty { xmlUrl }))
+
+        // Cache category name → id so we only hit the DB once per unique category name.
+        // Seed with any categories that already exist.
+        val categoryCache = mutableMapOf<String, Long>()
+        categoryDao.getAllCategoriesList().forEach { categoryCache[it.name] = it.id }
+
+        outlines.forEach { (xmlUrl, title, categoryName) ->
+            // Skip duplicates
+            val existing = feedDao.getFeedByUrl(xmlUrl)
+            val feedId: Long = if (existing != null) {
+                existing.id
+            } else {
+                val id = feedDao.upsertFeed(FeedEntity(url = xmlUrl, title = title.ifEmpty { xmlUrl }))
                 count++
+                id
+            }
+
+            // Wire up category if the OPML outline was nested under a category folder
+            if (categoryName != null) {
+                val categoryId = categoryCache.getOrPut(categoryName) {
+                    categoryDao.upsertCategory(CategoryEntity(name = categoryName))
+                }
+                // Only insert the cross-ref if this feed isn't already in this category
+                val existingRefs = feedDao.getCategoriesForFeed(feedId)
+                if (existingRefs.none { it.categoryId == categoryId }) {
+                    feedDao.insertFeedCategoryRef(
+                        FeedCategoryCrossRef(feedId = feedId, categoryId = categoryId, isPrimary = true)
+                    )
+                    feedDao.updatePrimaryCategory(feedId, categoryId)
+                }
             }
         }
         count
     }
 
     override suspend fun exportToOpml(): Result<String> = runCatching {
-        val feeds = feedDao.getAllFeedsList()
+        val feeds     = feedDao.getAllFeedsList()
+        val categories = categoryDao.getAllCategoriesList()
+
+        // Map categoryId → category name for quick lookup
+        val categoryById = categories.associateBy { it.id }
+
+        // Group feeds: category name → list of feeds; null key = Uncategorized
+        val grouped = LinkedHashMap<String?, MutableList<FeedEntity>>()
+        grouped[null] = mutableListOf()                     // Uncategorized goes last
+        categories.forEach { grouped[it.name] = mutableListOf() }
+
+        feeds.forEach { feed ->
+            val catName = feed.primaryCategoryId?.let { categoryById[it]?.name }
+            grouped.getOrPut(catName) { mutableListOf() }.add(feed)
+        }
+
         buildString {
             appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
             appendLine("""<opml version="2.0">""")
             appendLine("""  <head><title>BeyondPod Revival — Podcast Subscriptions</title></head>""")
             appendLine("""  <body>""")
-            for (feed in feeds) {
-                val t = feed.title.escapeXml()
-                val x = feed.url.escapeXml()
-                val h = feed.website.escapeXml()
-                appendLine("""    <outline text="$t" title="$t" type="rss" xmlUrl="$x" htmlUrl="$h"/>""")
+            grouped.forEach { (catName, catFeeds) ->
+                if (catFeeds.isEmpty()) return@forEach
+                if (catName != null) {
+                    appendLine("""    <outline text="${catName.escapeXml()}" title="${catName.escapeXml()}">""")
+                    catFeeds.forEach { feed ->
+                        val t = feed.title.escapeXml()
+                        val x = feed.url.escapeXml()
+                        val h = feed.website.escapeXml()
+                        appendLine("""      <outline text="$t" title="$t" type="rss" xmlUrl="$x" htmlUrl="$h"/>""")
+                    }
+                    appendLine("""    </outline>""")
+                } else {
+                    // Uncategorized feeds — flat outlines at body level
+                    catFeeds.forEach { feed ->
+                        val t = feed.title.escapeXml()
+                        val x = feed.url.escapeXml()
+                        val h = feed.website.escapeXml()
+                        appendLine("""    <outline text="$t" title="$t" type="rss" xmlUrl="$x" htmlUrl="$h"/>""")
+                    }
+                }
             }
             appendLine("""  </body>""")
             appendLine("""</opml>""")

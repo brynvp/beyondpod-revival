@@ -231,20 +231,37 @@ class FeedParser @Inject constructor() {
 
     private class OpmlHandler : DefaultHandler() {
         val results = mutableListOf<Triple<String, String, String?>>()
-        private var currentCategory: String? = null
+
+        /**
+         * Stack of outline "labels". Folder outlines push their text; feed outlines push a null
+         * sentinel. Both are popped in endElement so the stack stays balanced with the XML depth.
+         *
+         * Why a stack and not a single var: SAX fires endElement for BOTH self-closing feed tags
+         * (<outline type="rss" .../>) AND real folder-close tags (</outline>). A single var gets
+         * wiped after the first feed in every category, sending all remaining feeds to Uncategorized.
+         */
+        private val stack = ArrayDeque<String?>()
+
+        /** The active category name is the last non-null entry in the stack. */
+        private val currentCategory: String?
+            get() = stack.lastOrNull { it != null }
 
         override fun startElement(uri: String, localName: String, qName: String, attrs: Attributes) {
             if (qName != "outline" && localName != "outline") return
             val xmlUrl = attrs.getValue("xmlUrl")
             val text   = attrs.getValue("text") ?: attrs.getValue("title") ?: ""
-            when {
-                xmlUrl != null -> results.add(Triple(xmlUrl, text, currentCategory))
-                else           -> currentCategory = text.ifEmpty { null }
+            if (xmlUrl != null) {
+                results.add(Triple(xmlUrl, text, currentCategory))
+                stack.addLast(null)                    // sentinel: balanced pop on endElement
+            } else {
+                stack.addLast(text.ifEmpty { null })   // folder outline — name drives category
             }
         }
 
         override fun endElement(uri: String, localName: String, qName: String) {
-            if (qName == "outline" || localName == "outline") currentCategory = null
+            if ((qName == "outline" || localName == "outline") && stack.isNotEmpty()) {
+                stack.removeLast()
+            }
         }
     }
 
