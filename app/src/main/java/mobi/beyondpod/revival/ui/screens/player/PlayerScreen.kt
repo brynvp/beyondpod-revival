@@ -47,15 +47,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import android.content.res.Resources
-import android.view.ContextThemeWrapper
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.mediarouter.app.MediaRouteButton
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
-import com.google.android.gms.cast.framework.CastButtonFactory
-import mobi.beyondpod.revival.R
 import mobi.beyondpod.revival.ui.navigation.Screen
 import mobi.beyondpod.revival.ui.player.PlaybackViewModel
 import java.util.concurrent.TimeUnit
@@ -85,40 +78,6 @@ fun PlayerScreen(
                            else if (duration > 0L) currentPosition.toFloat() / duration.toFloat()
                            else 0f
 
-    // Context for MediaRouteButton — must apply Theme_BeyondPod with force=true.
-    //
-    // Root cause of the translucent-background crash:
-    //   Compose wraps its composition context with android:colorBackground explicitly set to 0
-    //   (transparent). ContextThemeWrapper copies the base theme first, then applies our style
-    //   with force=false on first init (see ContextThemeWrapper.initializeTheme). Because the
-    //   existing 0 was set explicitly, force=false leaves it intact and MediaRouterThemeHelper
-    //   sees #0 → crash.
-    //
-    // Fix: build a fresh Resources.Theme that (a) copies the base context's attrs so the button
-    //   looks correct, then (b) applies Theme_BeyondPod with force=true so our solid
-    //   colorBackground definitively overrides the 0.
-    val baseCtx = LocalContext.current
-    val castCtx = remember(baseCtx) {
-        // WHY ContextThemeWrapper and not plain ContextWrapper:
-        //   ContextWrapper.obtainStyledAttributes delegates to mBase, bypassing getTheme().
-        //   obtainStyledAttributes is final in Context so we can't override it ourselves.
-        //   ContextThemeWrapper DOES override obtainStyledAttributes to call this.getTheme(),
-        //   so subclassing it and overriding getTheme() works end-to-end.
-        //
-        // WHY a fresh theme with no setTo():
-        //   Compose's composition context has android:colorBackground = 0 explicitly set.
-        //   Copying it via setTo() then applying with force=true still loses in some cases.
-        //   Starting from a blank theme and applying Theme_BeyondPod (which has
-        //   android:colorBackground = #FFFAFAFA directly declared) means there is no 0 to
-        //   compete with. applyStyle walks the parent chain so colorPrimary etc. are still set.
-        object : ContextThemeWrapper(baseCtx, R.style.Theme_BeyondPod) {
-            private val _theme: Resources.Theme = baseCtx.resources.newTheme().also { t ->
-                t.applyStyle(R.style.Theme_BeyondPod, true)
-            }
-            override fun getTheme(): Resources.Theme = _theme
-        }
-    }
-
     // No Scaffold here — AppShell hides its own topBar/bottomBar on the FullPlayer route
     // so this Column owns the entire screen real-estate.
     Column(
@@ -147,19 +106,12 @@ fun PlayerScreen(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f)
             )
-            // Chromecast button — Cast SDK auto-shows/hides based on available devices.
-            // MediaRouteButton reads colorBackground from its context's theme to determine
-            // icon contrast. Compose's AndroidView context has no window background (#0),
-            // so we must wrap with the app theme before constructing the button.
-            AndroidView(
-                factory = { _ ->
-                    // castCtx is pre-built above with force=true theme — see comment there.
-                    MediaRouteButton(castCtx).also { button ->
-                        CastButtonFactory.setUpMediaRouteButton(castCtx, button)
-                    }
-                },
-                modifier = Modifier.size(48.dp)
-            )
+            // NOTE: MediaRouteButton (Cast) deliberately omitted from this Compose screen.
+            // MediaRouterThemeHelper.createThemedButtonContext() calls calculateContrast()
+            // against android:colorBackground, which Compose's composition context resolves
+            // to #0 (transparent) regardless of theme workarounds tried. This crashes on
+            // every player open. Cast sessions are still accessible via the media notification
+            // expanded controls where the system provides a proper themed context.
 
             // Sleep timer button — shows remaining time if active
             if (sleepTimerMs > 0L) {
