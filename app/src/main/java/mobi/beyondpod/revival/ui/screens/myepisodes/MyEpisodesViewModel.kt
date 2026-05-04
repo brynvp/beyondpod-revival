@@ -91,7 +91,10 @@ class MyEpisodesViewModel @Inject constructor(
                 "manual_refresh_all",
                 ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<FeedUpdateWorker>()
-                    .setInputData(workDataOf(FeedUpdateWorker.KEY_FEED_ID to FeedUpdateWorker.ALL_FEEDS))
+                    .setInputData(workDataOf(
+                        FeedUpdateWorker.KEY_FEED_ID  to FeedUpdateWorker.ALL_FEEDS,
+                        FeedUpdateWorker.KEY_IS_MANUAL to true
+                    ))
                     .build()
             )
             delay(1_500)

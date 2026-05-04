@@ -147,6 +147,12 @@ abstract class BeyondPodDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                    .addCallback(object : Callback() {
+                        override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                            super.onOpen(db)
+                            db.execSQL("PRAGMA foreign_keys = ON")
+                        }
+                    })
                     .build()
                     .also { widgetInstance = it }
             }

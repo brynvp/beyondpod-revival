@@ -3,6 +3,8 @@ package mobi.beyondpod.revival.service
 import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -29,7 +31,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
+import mobi.beyondpod.revival.data.local.dao.QueueSnapshotDao
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
 import mobi.beyondpod.revival.data.settings.AppSettings
@@ -56,6 +60,7 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var episodeRepository: EpisodeRepository
     @Inject lateinit var feedRepository: FeedRepository
     @Inject lateinit var dataStore: DataStore<Preferences>
+    @Inject lateinit var queueSnapshotDao: QueueSnapshotDao
 
     private lateinit var exoPlayer: ExoPlayer
     private var castPlayer: CastPlayer? = null
@@ -93,6 +98,10 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_SKIP_BACK       = "mobi.beyondpod.revival.SKIP_BACK"
         const val ACTION_SKIP_FORWARD    = "mobi.beyondpod.revival.SKIP_FORWARD"
 
+        /** Stop playback and clear state. Used by DeleteFeedUseCase (G12) when unsubscribing
+         *  a feed whose episode is currently playing. */
+        const val ACTION_STOP_PLAYBACK   = "mobi.beyondpod.revival.STOP_PLAYBACK"
+
         // Settings-aware rewind / fast-forward (reads SKIP_BACK_SECONDS / SKIP_FORWARD_SECONDS)
         const val ACTION_REWIND          = "mobi.beyondpod.revival.REWIND"
         const val ACTION_FAST_FORWARD    = "mobi.beyondpod.revival.FAST_FORWARD"
@@ -114,6 +123,12 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
+        // Read headphone-unplug preference synchronously at service start.
+        // DataStore is backed by a local file so this read is fast enough for onCreate.
+        val pauseOnUnplug = runBlocking {
+            dataStore.data.first()[AppSettings.PAUSE_ON_HEADPHONE_UNPLUG] ?: true
+        }
+
         exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -122,7 +137,7 @@ class PlaybackService : MediaSessionService() {
                     .build(),
                 /* handleAudioFocus= */ true
             )
-            .setHandleAudioBecomingNoisy(true)
+            .setHandleAudioBecomingNoisy(pauseOnUnplug)
             .build()
             .also { it.addListener(playerListener) }
 
@@ -173,11 +188,21 @@ class PlaybackService : MediaSessionService() {
                 val episodeId = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
                 if (episodeId >= 0) loadAndPlay(episodeId)
             }
+            ACTION_STOP_PLAYBACK  -> {
+                // Called by DeleteFeedUseCase (G12) when unsubscribing a feed whose episode
+                // is currently playing. Stop the player and clear all tracking state.
+                activePlayer.stop()
+                currentEpisodeId = -1L
+                currentStreamUrl = null
+                PlaybackStateHolder.currentlyPlayingEpisodeId = -1L
+                stopPositionSaving()
+            }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        PlaybackStateHolder.currentlyPlayingEpisodeId = -1L
         serviceScope.cancel()
         loudnessEnhancer?.release()
         loudnessEnhancer = null
@@ -195,15 +220,67 @@ class PlaybackService : MediaSessionService() {
     /**
      * Look up [episodeId] in the DB, resolve the playback URI, and start playing.
      *
+     * Resilience fallback chain (QE1 — FEED_DOWNLOAD_AUDIT):
+     *   1. Live DB lookup → happy path (episode row exists)
+     *   2. Episode row gone (feed unsubscribed) → try [QueueSnapshotItemEntity.localFilePathSnapshot]
+     *   3. File snapshot missing → try [QueueSnapshotItemEntity.episodeUrlSnapshot]
+     *   4. All fallbacks exhausted → abandon silently (snackbar wired when notification system added)
+     *
+     * WiFi-only guard (Q11): if the episode has no local file and the feed is WiFi-only,
+     * playback is blocked when on mobile data. Prevents silent data charges.
+     *
      * If a Cast session is active **and** the episode has a stream URL (not local-only),
      * playback is routed to [castPlayer]; otherwise [exoPlayer] is used. Local files cannot
      * be cast — Chromecast requires a publicly reachable HTTP URL.
      */
     private fun loadAndPlay(episodeId: Long) {
         serviceScope.launch {
-            val episode = episodeRepository.getEpisodeById(episodeId) ?: return@launch
-            val feed    = feedRepository.getFeedById(episode.feedId)
+            // Q9: claim this episode immediately so DownloadRepositoryImpl.applyRetentionCleanup()
+            // skips it even if the DB lookup below is slow.
+            PlaybackStateHolder.currentlyPlayingEpisodeId = episodeId
 
+            val episode = episodeRepository.getEpisodeById(episodeId)
+
+            // QE1: episode row gone (e.g. feed was unsubscribed after queue was built).
+            // Try the frozen snapshot fields as a resilience fallback.
+            if (episode == null) {
+                val snapshot = queueSnapshotDao.getActiveSnapshotOnce()
+                val item = snapshot?.let { snap ->
+                    queueSnapshotDao.getSnapshotItemsList(snap.id)
+                        .find { it.episodeId == episodeId }
+                }
+                if (item != null) {
+                    val fileUri = item.localFilePathSnapshot
+                        ?.let { path -> File(path).takeIf { it.exists() }?.let { Uri.fromFile(it) } }
+                    val streamUri = item.episodeUrlSnapshot
+                        .takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
+                    val playUri = fileUri ?: streamUri
+
+                    if (playUri != null) {
+                        val meta = MediaMetadata.Builder()
+                            .setTitle(item.episodeTitleSnapshot.ifBlank { "Unknown episode" })
+                            .setArtist(item.feedTitleSnapshot.ifBlank { null })
+                            .build()
+                        val exoItem = MediaItem.Builder()
+                            .setMediaId(episodeId.toString())
+                            .setUri(playUri)
+                            .setMediaMetadata(meta)
+                            .build()
+                        currentEpisodeId = episodeId
+                        currentStreamUrl = streamUri?.toString()
+                        exoPlayer.setMediaItem(exoItem)
+                        exoPlayer.prepare()
+                        exoPlayer.play()
+                        return@launch
+                    }
+                }
+                // All fallbacks exhausted — release the claim and bail.
+                // TODO: surface "File not available" snackbar once notification system lands (Task #11).
+                PlaybackStateHolder.currentlyPlayingEpisodeId = -1L
+                return@launch
+            }
+
+            val feed = feedRepository.getFeedById(episode.feedId)
             currentEpisodeId  = episodeId
             currentStreamUrl  = episode.url  // always the remote stream URL, never local path
 
@@ -230,9 +307,20 @@ class PlaybackService : MediaSessionService() {
                 castPlayer!!.play()
             } else {
                 // Local path — prefer downloaded file, fall back to stream
-                val uri = episode.localFilePath
-                    ?.takeIf { File(it).exists() }
-                    ?: episode.url
+                val localFile = episode.localFilePath?.takeIf { File(it).exists() }
+                val uri = localFile ?: episode.url
+
+                // Q11: WiFi-only guard — block streaming over mobile for WiFi-only feeds.
+                // Local file playback is always allowed regardless of network.
+                if (localFile == null) {
+                    val wifiOnly = feed?.downloadOnlyOnWifi
+                        ?: (dataStore.data.first()[AppSettings.DOWNLOAD_ON_WIFI_ONLY] ?: false)
+                    if (wifiOnly && !isOnWifi()) {
+                        // Silently block — snackbar wired when notification system added (Task #11).
+                        PlaybackStateHolder.currentlyPlayingEpisodeId = -1L
+                        return@launch
+                    }
+                }
 
                 val exoItem = MediaItem.Builder()
                     .setMediaId(episodeId.toString())
@@ -358,6 +446,20 @@ class PlaybackService : MediaSessionService() {
         enhancer.enabled = gainMillibels > 0
     }
 
+    // ── Network helpers ───────────────────────────────────────────────────────
+
+    /**
+     * True when the active network has WiFi or Ethernet transport.
+     * Mirrors the same check in DownloadRepositoryImpl so the WiFi-only constraint is
+     * enforced consistently for both downloads (DownloadManager) and streaming (ExoPlayer).
+     */
+    private fun isOnWifi(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+               caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+
     // ── Sleep timer ───────────────────────────────────────────────────────────
 
     private fun startSleepTimer(durationMs: Long) {
@@ -434,11 +536,15 @@ class PlaybackService : MediaSessionService() {
                 if (!isCasting) applyVolumeBoost(1)
             } else {
                 stopPositionSaving()
-                // Save position immediately on pause
+                // Save position immediately on pause — guard against ghost writes on deleted episodes.
                 if (currentEpisodeId > 0) {
+                    val episodeIdSnapshot = currentEpisodeId
                     val position = activePlayer.currentPosition
                     serviceScope.launch {
-                        episodeRepository.savePlayPosition(currentEpisodeId, position)
+                        // Only write if the row still exists (episode may have been deleted while playing).
+                        if (episodeRepository.getEpisodeById(episodeIdSnapshot) != null) {
+                            episodeRepository.savePlayPosition(episodeIdSnapshot, position)
+                        }
                     }
                 }
             }
@@ -451,11 +557,30 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            // Mark episode played when it finishes naturally
+            // Mark episode played when it finishes naturally, then auto-advance if enabled
             if (playbackState == Player.STATE_ENDED && currentEpisodeId > 0) {
                 val episodeId = currentEpisodeId
                 serviceScope.launch {
                     episodeRepository.markPlayed(episodeId)
+
+                    // Auto-delete played — remove file immediately if the setting is on and
+                    // the episode is not protected (deleteDownload enforces the isProtected veto).
+                    val autoDelete = dataStore.data.first()[AppSettings.AUTO_DELETE_PLAYED] ?: false
+                    if (autoDelete) {
+                        episodeRepository.deleteEpisodeFile(episodeId)
+                    }
+
+                    val continuous = dataStore.data.first()[AppSettings.CONTINUOUS_PLAYBACK] ?: true
+                    if (!continuous) return@launch
+
+                    val finished = episodeRepository.getEpisodeById(episodeId) ?: return@launch
+                    val newerNext = dataStore.data.first()[AppSettings.AUTOPLAY_NEWER_NEXT] ?: true
+                    val next = if (newerNext)
+                        episodeRepository.getNextNewerEpisode(finished.feedId, finished.pubDate)
+                    else
+                        episodeRepository.getNextOlderEpisode(finished.feedId, finished.pubDate)
+
+                    if (next != null) loadAndPlay(next.id)
                 }
             }
         }
@@ -463,6 +588,18 @@ class PlaybackService : MediaSessionService() {
         override fun onPlayerError(error: PlaybackException) {
             // Stop unconditionally — leaves the player in STATE_IDLE with no automatic retry.
             activePlayer.stop()
+
+            // Q12: network-aware error handling.
+            // If the failure is a network/IO error and we're offline, leave the player stopped
+            // so the user can resume manually when connectivity returns.
+            // If we have connectivity but the stream failed (bad URL, server error), this is
+            // a content error — queue-skip logic will land here once QE4 / Task #11 lands.
+            val isNetworkError = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+                    || error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+            if (isNetworkError && !isOnWifi()) {
+                // Offline — stay stopped. TODO: surface "Playback paused — no network" snackbar (Task #11).
+            }
+            // Content errors (bad URL, HTTP 404, etc.) logged implicitly by ExoPlayer.
         }
     }
 }

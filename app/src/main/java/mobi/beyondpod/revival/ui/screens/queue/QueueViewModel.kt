@@ -61,7 +61,9 @@ class QueueViewModel @Inject constructor(
                             episode = episodeRepository.getEpisodeById(item.episodeId)
                         )
                     }
-                    QueueUiState.Active(snapshot, queueItems)
+                    // QE6: an active snapshot with 0 items should show Empty, not an empty Active state.
+                    if (queueItems.isEmpty()) QueueUiState.Empty
+                    else QueueUiState.Active(snapshot, queueItems)
                 }
         }
         .stateIn(
@@ -90,7 +92,13 @@ class QueueViewModel @Inject constructor(
     fun reorderItems(reorderedItems: List<QueueItem>) {
         viewModelScope.launch {
             val state = uiState.value as? QueueUiState.Active ?: return@launch
-            val snapshot = state.snapshot.copy(id = 0)  // replaceActiveSnapshot assigns a new ID
+            // Q5: preserve currentItemIndex and currentItemPositionMs so the playback cursor
+            // doesn't reset to position 0 after a drag-to-reorder gesture.
+            val snapshot = state.snapshot.copy(
+                id = 0,  // replaceActiveSnapshot assigns a new ID
+                currentItemIndex = state.snapshot.currentItemIndex,
+                currentItemPositionMs = state.snapshot.currentItemPositionMs
+            )
             val items = reorderedItems.mapIndexed { index, qi ->
                 qi.snapshotItem.copy(id = 0, snapshotId = 0, position = index)
             }

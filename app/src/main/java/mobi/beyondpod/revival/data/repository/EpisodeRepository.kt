@@ -7,6 +7,15 @@ import mobi.beyondpod.revival.data.local.entity.QueueSnapshotEntity
 interface EpisodeRepository {
     fun getEpisodesForFeed(feedId: Long): Flow<List<EpisodeEntity>>
     suspend fun getEpisodeById(id: Long): EpisodeEntity?
+
+    /**
+     * Auto-advance helpers — find the adjacent episode in the same feed by pubDate.
+     * Used by PlaybackService when an episode finishes and CONTINUOUS_PLAYBACK is enabled.
+     * [getNextNewerEpisode] returns the episode with the lowest pubDate strictly above [currentPubDate].
+     * [getNextOlderEpisode] returns the episode with the highest pubDate strictly below [currentPubDate].
+     */
+    suspend fun getNextNewerEpisode(feedId: Long, currentPubDate: Long): EpisodeEntity?
+    suspend fun getNextOlderEpisode(feedId: Long, currentPubDate: Long): EpisodeEntity?
     fun getQueuedEpisodes(): Flow<List<EpisodeEntity>>
     fun getActiveQueueSnapshot(): Flow<QueueSnapshotEntity?>
     fun searchEpisodes(query: String): Flow<List<EpisodeEntity>>

@@ -5,7 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -15,7 +17,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import mobi.beyondpod.revival.data.repository.DownloadRepository
 import mobi.beyondpod.revival.data.settings.AppSettings
 import mobi.beyondpod.revival.service.FeedUpdateWorker
 import java.util.concurrent.TimeUnit
@@ -31,6 +36,7 @@ data class SettingsUiState(
     val pauseOnHeadphoneUnplug: Boolean = true,
     val pauseOnNotification: Boolean = false,
     val continuousPlayback: Boolean = true,
+    val autoplayNewerNext: Boolean  = true,   // true = advance to newer episode; false = older
 
     // Updates
     val autoUpdateEnabled: Boolean = true,
@@ -77,7 +83,8 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val dataStore: DataStore<Preferences>,
-    private val workManager: WorkManager
+    private val workManager: WorkManager,
+    private val downloadRepository: DownloadRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = dataStore.data.map { prefs ->
@@ -90,6 +97,7 @@ class SettingsViewModel @Inject constructor(
             pauseOnHeadphoneUnplug = prefs[AppSettings.PAUSE_ON_HEADPHONE_UNPLUG] ?: true,
             pauseOnNotification  = prefs[AppSettings.PAUSE_ON_NOTIFICATION] ?: false,
             continuousPlayback   = prefs[AppSettings.CONTINUOUS_PLAYBACK] ?: true,
+            autoplayNewerNext    = prefs[AppSettings.AUTOPLAY_NEWER_NEXT] ?: true,
             autoUpdateEnabled    = prefs[AppSettings.AUTO_UPDATE_ENABLED] ?: true,
             updateIntervalHours  = prefs[AppSettings.UPDATE_INTERVAL_HOURS] ?: 4,
             turnWifiDuringUpdate = prefs[AppSettings.TURN_WIFI_DURING_UPDATE] ?: false,
@@ -138,6 +146,7 @@ class SettingsViewModel @Inject constructor(
     fun setPauseOnHeadphoneUnplug(v: Boolean) = set { it[AppSettings.PAUSE_ON_HEADPHONE_UNPLUG] = v }
     fun setPauseOnNotification(v: Boolean)    = set { it[AppSettings.PAUSE_ON_NOTIFICATION] = v }
     fun setContinuousPlayback(v: Boolean)     = set { it[AppSettings.CONTINUOUS_PLAYBACK] = v }
+    fun setAutoplayNewerNext(v: Boolean)      = set { it[AppSettings.AUTOPLAY_NEWER_NEXT] = v }
 
     fun setAutoUpdateEnabled(v: Boolean) {
         set { it[AppSettings.AUTO_UPDATE_ENABLED] = v }
@@ -159,13 +168,35 @@ class SettingsViewModel @Inject constructor(
         }
     }
     fun setTurnWifiDuringUpdate(v: Boolean) = set { it[AppSettings.TURN_WIFI_DURING_UPDATE] = v }
-    fun setUpdateOnWifiOnly(v: Boolean)   = set { it[AppSettings.UPDATE_ON_WIFI_ONLY] = v }
+    fun setUpdateOnWifiOnly(v: Boolean) {
+        set { it[AppSettings.UPDATE_ON_WIFI_ONLY] = v }
+        // Reschedule so the new network constraint takes effect immediately
+        viewModelScope.launch {
+            val enabled = dataStore.data.first()[AppSettings.AUTO_UPDATE_ENABLED] ?: true
+            if (enabled) {
+                val hours = dataStore.data.first()[AppSettings.UPDATE_INTERVAL_HOURS] ?: 4
+                schedulePeriodicUpdate(hours.toLong())
+            }
+        }
+    }
 
-    fun setDownloadOnWifiOnly(v: Boolean)      = set { it[AppSettings.DOWNLOAD_ON_WIFI_ONLY] = v }
-    fun setGlobalDownloadCount(v: Int)         = set { it[AppSettings.GLOBAL_DOWNLOAD_COUNT] = v }
-    fun setGlobalMaxKeep(v: Int)               = set { it[AppSettings.GLOBAL_MAX_KEEP] = v }
-    fun setGlobalDeleteOlderThanDays(v: Int)   = set { it[AppSettings.GLOBAL_DELETE_OLDER_THAN_DAYS] = v }
-    fun setAutoDeletePlayed(v: Boolean)        = set { it[AppSettings.AUTO_DELETE_PLAYED] = v }
+    fun setDownloadOnWifiOnly(v: Boolean)    = set { it[AppSettings.DOWNLOAD_ON_WIFI_ONLY] = v }
+    fun setGlobalDownloadCount(v: Int)       = set { it[AppSettings.GLOBAL_DOWNLOAD_COUNT] = v }
+    fun setGlobalMaxKeep(v: Int) {
+        set { it[AppSettings.GLOBAL_MAX_KEEP] = v }
+        // G15: run on IO — DB + file I/O across all feeds must not run on the UI dispatcher
+        viewModelScope.launch { withContext(Dispatchers.IO) { downloadRepository.runGlobalRetentionCleanup() } }
+    }
+    fun setGlobalDeleteOlderThanDays(v: Int) {
+        set { it[AppSettings.GLOBAL_DELETE_OLDER_THAN_DAYS] = v }
+        viewModelScope.launch { withContext(Dispatchers.IO) { downloadRepository.runGlobalRetentionCleanup() } }
+    }
+    fun setAutoDeletePlayed(v: Boolean)      = set { it[AppSettings.AUTO_DELETE_PLAYED] = v }
+
+    /** Immediate on-demand cleanup — respects current global + per-feed settings. */
+    fun cleanUpNow() {
+        viewModelScope.launch { withContext(Dispatchers.IO) { downloadRepository.runGlobalRetentionCleanup() } }
+    }
 
     fun setTheme(v: String)              = set { it[AppSettings.THEME] = v }
     fun setScrobbleEnabled(v: Boolean)   = set { it[AppSettings.SCROBBLE_ENABLED] = v }
@@ -192,17 +223,24 @@ class SettingsViewModel @Inject constructor(
     fun setNotifPlaylistRebuild(v: Boolean)  = set { it[AppSettings.NOTIF_PLAYLIST_REBUILD] = v }
 
     private fun schedulePeriodicUpdate(intervalHours: Long) {
-        val request = PeriodicWorkRequestBuilder<FeedUpdateWorker>(
-            repeatInterval = intervalHours,
-            repeatIntervalTimeUnit = TimeUnit.HOURS
-        )
-            .setInputData(workDataOf(FeedUpdateWorker.KEY_FEED_ID to FeedUpdateWorker.ALL_FEEDS))
-            .build()
-        workManager.enqueueUniquePeriodicWork(
-            "feed_update_periodic",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            request
-        )
+        viewModelScope.launch {
+            val wifiOnly = dataStore.data.first()[AppSettings.UPDATE_ON_WIFI_ONLY] ?: false
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+                .build()
+            val request = PeriodicWorkRequestBuilder<FeedUpdateWorker>(
+                repeatInterval = intervalHours,
+                repeatIntervalTimeUnit = TimeUnit.HOURS
+            )
+                .setConstraints(constraints)
+                .setInputData(workDataOf(FeedUpdateWorker.KEY_FEED_ID to FeedUpdateWorker.ALL_FEEDS))
+                .build()
+            workManager.enqueueUniquePeriodicWork(
+                "feed_update_periodic",
+                ExistingPeriodicWorkPolicy.UPDATE,
+                request
+            )
+        }
     }
 
     private fun set(block: (MutablePreferences) -> Unit) {

@@ -32,6 +32,12 @@ class EpisodeRepositoryImpl @Inject constructor(
     override suspend fun getEpisodeById(id: Long): EpisodeEntity? =
         episodeDao.getEpisodeById(id)
 
+    override suspend fun getNextNewerEpisode(feedId: Long, currentPubDate: Long): EpisodeEntity? =
+        episodeDao.getNextNewerEpisode(feedId, currentPubDate)
+
+    override suspend fun getNextOlderEpisode(feedId: Long, currentPubDate: Long): EpisodeEntity? =
+        episodeDao.getNextOlderEpisode(feedId, currentPubDate)
+
     override fun getQueuedEpisodes(): Flow<List<EpisodeEntity>> =
         episodeDao.getQueuedEpisodes()
 

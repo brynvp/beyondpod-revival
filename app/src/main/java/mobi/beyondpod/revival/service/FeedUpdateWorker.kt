@@ -15,6 +15,8 @@ import mobi.beyondpod.revival.data.repository.FeedRepository
  *
  * Input data keys:
  *   [KEY_FEED_ID] Long — single feed id, or [ALL_FEEDS] to refresh every feed.
+ *   [KEY_IS_MANUAL] Boolean — true when triggered by the user; bypasses per-cycle downloadCount
+ *       cap in autoDownloadNewEpisodes so all available new episodes are enqueued in one pass.
  *
  * Step order is MANDATORY (CLAUDE.md rule #8, §9):
  *   1–4  Fetch + parse RSS, dedup, upsert episodes, archive removed   ← Phase 7 wires SAX parser
@@ -39,20 +41,22 @@ class FeedUpdateWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     companion object {
-        const val KEY_FEED_ID = "feed_id"
-        const val ALL_FEEDS   = -1L
+        const val KEY_FEED_ID  = "feed_id"
+        const val KEY_IS_MANUAL = "is_manual"
+        const val ALL_FEEDS    = -1L
     }
 
     override suspend fun doWork(): Result {
-        val feedId = inputData.getLong(KEY_FEED_ID, ALL_FEEDS)
+        val feedId   = inputData.getLong(KEY_FEED_ID, ALL_FEEDS)
+        val isManual = inputData.getBoolean(KEY_IS_MANUAL, false)
         return try {
             if (feedId == ALL_FEEDS) {
                 // Clear any stale lastUpdateFailed flags left by the old worker bug before
                 // processing feeds — ensures the warning icon only fires on real failures.
                 feedDao.clearAllUpdateFailedFlags()
-                feedDao.getAllFeedsList().forEach { processFeed(it.id) }
+                feedDao.getAllFeedsList().forEach { processFeed(it.id, isManual) }
             } else {
-                processFeed(feedId)
+                processFeed(feedId, isManual)
             }
             Result.success()
         } catch (e: Exception) {
@@ -60,7 +64,7 @@ class FeedUpdateWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun processFeed(feedId: Long) {
+    private suspend fun processFeed(feedId: Long, isManual: Boolean = false) {
         val feed = feedDao.getFeedById(feedId) ?: return
 
         // ── Virtual folder feeds: scan for new audio files, skip RSS fetch ───
@@ -74,18 +78,19 @@ class FeedUpdateWorker @AssistedInject constructor(
         // markFailure=false: background failures are transient — don't stamp lastUpdateFailed=true
         // on every feed when the device is briefly offline. The warning icon is only meaningful
         // for manual pull-to-refresh failures (FeedDetailViewModel.refresh uses the default true).
-        feedRepository.refreshFeed(feedId, markFailure = false)
-            .onFailure { /* silent — background failure; will retry on next scheduled run */ }
+        val refreshResult = feedRepository.refreshFeed(feedId, markFailure = false)
 
         // ── Step 5: Enforce maxTrackAgeDays ─────────────────────────────────
         // Full age-based cleanup requires a DAO query keyed on pubDate + maxTrackAgeDays.
         // Wired in Phase 7 alongside the RSS parser. isProtected veto applies.
 
         // ── Steps 6+7: Cleanup THEN auto-download (mandatory order, rule #8) ─
-        // Retention cleanup runs inside autoDownloadNewEpisodes() before any new
-        // downloads are enqueued. Soft-delete only — episode records are never
-        // hard-deleted here (that would destroy play history and starred state).
-        downloadRepository.autoDownloadNewEpisodes(feedId)
+        // G8: only run cleanup + download when the RSS fetch actually succeeded.
+        // Running cleanup on a stale snapshot (fetch failed, no new episodes) risks
+        // deleting valid downloads without replacing them. Mirrors FeedDetailViewModel.refresh().
+        if (refreshResult.isSuccess) {
+            downloadRepository.autoDownloadNewEpisodes(feedId, isManualRefresh = isManual)
+        }
 
         // ── Step 8: Auto-add to My Episodes (Phase 4 stub) ──────────────────
         // ── Step 9: New-episode notification  (Phase 4 stub) ────────────────

@@ -199,6 +199,14 @@ interface EpisodeDao {
     """)
     suspend fun getDownloadedOlderThan(feedId: Long, cutoffMs: Long): List<EpisodeEntity>
 
+    // Count episodes currently being downloaded or waiting to stream — used to calculate
+    // how many slots remain before hitting the keepCount ceiling.
+    @Query("""
+        SELECT COUNT(*) FROM episodes
+        WHERE feedId = :feedId AND downloadState IN ('DOWNLOADING', 'QUEUED')
+    """)
+    suspend fun countInFlightDownloads(feedId: Long): Int
+
     // Episodes available for auto-download (not yet downloaded), newest first
     @Query("""
         SELECT * FROM episodes
@@ -214,6 +222,14 @@ interface EpisodeDao {
         ORDER BY pubDate ASC LIMIT :count
     """)
     suspend fun getNotDownloadedOldest(feedId: Long, count: Int): List<EpisodeEntity>
+
+    // Auto-advance: nearest episode in same feed with pubDate strictly after current (ascending = oldest match first)
+    @Query("SELECT * FROM episodes WHERE feedId = :feedId AND pubDate > :currentPubDate ORDER BY pubDate ASC LIMIT 1")
+    suspend fun getNextNewerEpisode(feedId: Long, currentPubDate: Long): EpisodeEntity?
+
+    // Auto-advance: nearest episode in same feed with pubDate strictly before current (descending = newest match first)
+    @Query("SELECT * FROM episodes WHERE feedId = :feedId AND pubDate < :currentPubDate ORDER BY pubDate DESC LIMIT 1")
+    suspend fun getNextOlderEpisode(feedId: Long, currentPubDate: Long): EpisodeEntity?
 
     // DownloadManager integration — store the system download ID so we can cancel/query it
     @Query("UPDATE episodes SET downloadId = :dmId, downloadState = :state WHERE id = :episodeId")

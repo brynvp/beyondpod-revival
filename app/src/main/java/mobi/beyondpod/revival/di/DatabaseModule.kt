@@ -27,6 +27,14 @@ object DatabaseModule {
             .addMigrations(BeyondPodDatabase.MIGRATION_1_2, BeyondPodDatabase.MIGRATION_2_3, BeyondPodDatabase.MIGRATION_3_4, BeyondPodDatabase.MIGRATION_4_5)
             // WAL mode: reads never block writes (DownloadWorker writes while UI reads)
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            // SQLite does NOT enforce foreign keys by default — this enables ON DELETE CASCADE
+            // on EpisodeEntity (feedId → feeds) and QueueSnapshotItemEntity.
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    super.onOpen(db)
+                    db.execSQL("PRAGMA foreign_keys = ON")
+                }
+            })
             .build()
 
     @Provides

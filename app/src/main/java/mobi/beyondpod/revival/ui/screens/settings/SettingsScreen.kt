@@ -112,6 +112,15 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setContinuousPlayback
                 )
             }
+            item {
+                SwitchPref(
+                    title    = "Play next episode",
+                    subtitle = if (state.autoplayNewerNext) "Advances to newer episode" else "Advances to older episode",
+                    checked  = state.autoplayNewerNext,
+                    onCheckedChange = viewModel::setAutoplayNewerNext,
+                    enabled  = state.continuousPlayback
+                )
+            }
             item { HorizontalDivider() }
 
             // ── Updates ───────────────────────────────────────────────────────
@@ -138,13 +147,6 @@ fun SettingsScreen(
                     title   = "Update on Wi-Fi only",
                     checked = state.updateOnWifiOnly,
                     onCheckedChange = viewModel::setUpdateOnWifiOnly
-                )
-            }
-            item {
-                SwitchPref(
-                    title   = "Turn on Wi-Fi for updates",
-                    checked = state.turnWifiDuringUpdate,
-                    onCheckedChange = viewModel::setTurnWifiDuringUpdate
                 )
             }
             item { HorizontalDivider() }
@@ -193,6 +195,13 @@ fun SettingsScreen(
                     title   = "Auto-delete played episodes",
                     checked = state.autoDeletePlayed,
                     onCheckedChange = viewModel::setAutoDeletePlayed
+                )
+            }
+            item {
+                PrefItem(
+                    title    = "Clean up downloads now",
+                    subtitle = "Delete episodes beyond your keep limit across all feeds",
+                    onClick  = viewModel::cleanUpNow
                 )
             }
             item { HorizontalDivider() }
@@ -348,26 +357,32 @@ private fun SwitchPref(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    subtitle: String? = null
+    subtitle: String? = null,
+    enabled: Boolean = true
 ) {
+    val alpha = if (enabled) 1f else 0.38f
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
+            )
             if (subtitle != null) {
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f * alpha)
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 

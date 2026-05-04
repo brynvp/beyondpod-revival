@@ -28,6 +28,8 @@ object AppSettings {
     val PAUSE_ON_HEADPHONE_UNPLUG = booleanPreferencesKey("pause_on_headphone_unplug")
     val PAUSE_ON_NOTIFICATION = booleanPreferencesKey("pause_on_notification")
     val CONTINUOUS_PLAYBACK  = booleanPreferencesKey("continuous_playback")
+    // true = advance to the next NEWER episode (higher pubDate); false = next OLDER episode. Default true.
+    val AUTOPLAY_NEWER_NEXT  = booleanPreferencesKey("autoplay_newer_next")
 
     // ── Updates ───────────────────────────────────────────────────────────────
     val AUTO_UPDATE_ENABLED  = booleanPreferencesKey("auto_update_enabled")

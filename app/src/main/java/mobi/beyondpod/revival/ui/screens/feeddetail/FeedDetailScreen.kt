@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,6 +50,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -77,9 +80,10 @@ fun FeedDetailScreen(
     navController: NavController,
     viewModel: FeedDetailViewModel = hiltViewModel()
 ) {
-    val uiState      by viewModel.uiState.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val categories   by viewModel.categories.collectAsState()
+    val uiState           by viewModel.uiState.collectAsState()
+    val isRefreshing      by viewModel.isRefreshing.collectAsState()
+    val categories        by viewModel.categories.collectAsState()
+    val showMobileWarning by viewModel.showMobileWarning.collectAsState()
     val context      = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
@@ -263,6 +267,27 @@ fun FeedDetailScreen(
             }
         )
     }
+
+    // Mobile data warning dialog — shown when WiFi-only is enabled but device is on mobile
+    if (showMobileWarning) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissMobileWarning() },
+            title = { Text("Mobile Data") },
+            text = {
+                Text("You're on mobile data and WiFi-only downloads are enabled. Download new episodes using mobile data?")
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmMobileDownload() }) {
+                    Text("Download")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissMobileWarning() }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -374,6 +399,8 @@ private fun FeedHeader(feed: FeedEntity) {
 @Composable
 private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
     var showStrategyDialog by remember { mutableStateOf(false) }
+    var showUrlDialog      by remember { mutableStateOf(false) }
+    var urlInput           by remember(feed.url) { mutableStateOf(feed.url) }
 
     // Cycle-through option lists — null = "Global default"
     val downloadCountOptions = listOf(null, 1, 3, 5, 10, 20)
@@ -383,7 +410,11 @@ private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item {
             SettingsSectionHeader("General")
-            SettingsRow(label = "Feed URL", value = feed.url)
+            ClickableSettingsRow(
+                label   = "Feed URL",
+                value   = feed.url,
+                onClick = { urlInput = feed.url; showUrlDialog = true }
+            )
             SettingsRow(label = "Priority", value = if (feed.priority == 0) "Normal" else "High")
             SettingsRow(
                 label = "Feed authentication",
@@ -470,6 +501,38 @@ private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
         }
     }
 
+    // Feed URL edit dialog
+    if (showUrlDialog) {
+        AlertDialog(
+            onDismissRequest = { showUrlDialog = false },
+            title = { Text("Edit Feed URL") },
+            text = {
+                OutlinedTextField(
+                    value         = urlInput,
+                    onValueChange = { urlInput = it },
+                    label         = { Text("RSS feed URL") },
+                    singleLine    = false,
+                    minLines      = 2,
+                    modifier      = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmed = urlInput.trim()
+                        if (trimmed.isNotEmpty()) {
+                            viewModel.updateFeedProperties(feed.copy(url = trimmed))
+                        }
+                        showUrlDialog = false
+                    }
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUrlDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     // Download strategy dialog
     if (showStrategyDialog) {
         val strategies = DownloadStrategy.entries
@@ -532,7 +595,11 @@ private fun SettingsRow(label: String, value: String) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
         )
     }
     HorizontalDivider(thickness = 0.5.dp)
@@ -556,7 +623,11 @@ private fun ClickableSettingsRow(label: String, value: String, onClick: () -> Un
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
         )
     }
     HorizontalDivider(thickness = 0.5.dp)

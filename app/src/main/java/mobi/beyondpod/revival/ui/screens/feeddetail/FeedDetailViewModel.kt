@@ -10,7 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mobi.beyondpod.revival.data.local.entity.CategoryEntity
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
@@ -57,6 +59,9 @@ class FeedDetailViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
+    private val _showMobileWarning = MutableStateFlow(false)
+    val showMobileWarning: StateFlow<Boolean> = _showMobileWarning
+
     val categories: StateFlow<List<CategoryEntity>> = categoryRepository.getAllCategories()
         .stateIn(
             scope = viewModelScope,
@@ -82,10 +87,31 @@ class FeedDetailViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
-            feedRepository.refreshFeed(feedId)
-            downloadRepository.autoDownloadNewEpisodes(feedId)
+            val refreshResult = feedRepository.refreshFeed(feedId)
+            // Only run download/cleanup logic when the RSS fetch actually succeeded.
+            // If it failed, episodes haven't changed — no point running cleanup, and
+            // running it on a stale snapshot risks deleting valid downloads.
+            if (refreshResult.isSuccess) {
+                if (downloadRepository.checkMobileDownloadBlocked(feedId)) {
+                    _showMobileWarning.value = true
+                } else {
+                    downloadRepository.autoDownloadNewEpisodes(feedId, isManualRefresh = true)
+                }
+            }
             _isRefreshing.value = false
         }
+    }
+
+    /** User approved downloading over mobile data — proceed with downloads. */
+    fun confirmMobileDownload() {
+        viewModelScope.launch {
+            _showMobileWarning.value = false
+            downloadRepository.autoDownloadNewEpisodes(feedId, isManualRefresh = true, mobileAllowed = true)
+        }
+    }
+
+    fun dismissMobileWarning() {
+        _showMobileWarning.value = false
     }
 
     /** Mark every episode in this feed as played. */
@@ -96,10 +122,22 @@ class FeedDetailViewModel @Inject constructor(
         }
     }
 
-    /** Persist changes to feed properties (title, category, settings, etc.). */
+    /** Persist changes to feed properties (title, category, settings, etc.).
+     *  G19: if maxEpisodesToKeep was reduced, trigger immediate cleanup for this feed so
+     *  the user sees the effect right away rather than waiting for the next refresh. */
     fun updateFeedProperties(feed: FeedEntity) {
         viewModelScope.launch {
+            val existing = feedRepository.getFeedById(feedId)
             feedRepository.updateFeedProperties(feed)
+            // Immediate cleanup when keepCount is reduced (or newly set from unlimited)
+            val oldKeep = existing?.maxEpisodesToKeep
+            val newKeep = feed.maxEpisodesToKeep
+            val keepReduced = newKeep != null && (oldKeep == null || newKeep < oldKeep)
+            if (keepReduced) {
+                withContext(Dispatchers.IO) {
+                    downloadRepository.autoDownloadNewEpisodes(feedId, isManualRefresh = false)
+                }
+            }
         }
     }
 

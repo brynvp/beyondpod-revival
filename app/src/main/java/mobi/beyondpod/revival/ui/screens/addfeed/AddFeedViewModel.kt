@@ -93,7 +93,10 @@ class AddFeedViewModel @Inject constructor(
      */
     private fun enqueueImmediateRefresh(feedId: Long) {
         val request = OneTimeWorkRequestBuilder<FeedUpdateWorker>()
-            .setInputData(workDataOf(FeedUpdateWorker.KEY_FEED_ID to feedId))
+            .setInputData(workDataOf(
+                FeedUpdateWorker.KEY_FEED_ID  to feedId,
+                FeedUpdateWorker.KEY_IS_MANUAL to true
+            ))
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
         workManager.enqueueUniqueWork(
