@@ -573,6 +573,34 @@ class PlaybackService : MediaSessionService() {
                     val continuous = dataStore.data.first()[AppSettings.CONTINUOUS_PLAYBACK] ?: true
                     if (!continuous) return@launch
 
+                    // QE4: Queue-first auto-advance (architecture rule #1 — queue is the source
+                    // of truth for playback order). Only fall back to feed-based advance when
+                    // the episode was played outside of a queue (e.g. tapped directly in feed).
+                    val snapshot = queueSnapshotDao.getActiveSnapshotOnce()
+                    if (snapshot != null) {
+                        val items = queueSnapshotDao.getSnapshotItemsList(snapshot.id)
+                        val currentIndex = items.indexOfFirst { it.episodeId == episodeId }
+                        if (currentIndex >= 0) {
+                            // Episode was playing from the queue — advance to next queue item.
+                            val nextIndex = currentIndex + 1
+                            if (nextIndex < items.size) {
+                                // Persist new cursor position before loading next episode so that
+                                // a crash between these two calls still leaves the snapshot pointing
+                                // at the right item on resume.
+                                queueSnapshotDao.updatePlaybackPosition(
+                                    index = nextIndex,
+                                    positionMs = 0L
+                                )
+                                loadAndPlay(items[nextIndex].episodeId)
+                            }
+                            // else: end of queue — stop cleanly (no wraparound).
+                            return@launch
+                        }
+                        // Episode not found in queue — fall through to feed-based advance below.
+                    }
+
+                    // Fallback: no active queue, or episode played outside queue.
+                    // Use feed order (AUTOPLAY_NEWER_NEXT setting).
                     val finished = episodeRepository.getEpisodeById(episodeId) ?: return@launch
                     val newerNext = dataStore.data.first()[AppSettings.AUTOPLAY_NEWER_NEXT] ?: true
                     val next = if (newerNext)

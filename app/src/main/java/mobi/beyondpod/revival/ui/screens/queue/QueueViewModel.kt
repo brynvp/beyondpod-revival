@@ -15,6 +15,7 @@ import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.QueueSnapshotEntity
 import mobi.beyondpod.revival.data.local.entity.QueueSnapshotItemEntity
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
+import mobi.beyondpod.revival.service.PlaybackStateHolder
 import javax.inject.Inject
 
 data class QueueItem(
@@ -37,7 +38,7 @@ sealed interface QueueUiState {
  * ALL queue mutations go through [QueueSnapshotDao]. EpisodeEntity is NEVER modified
  * to reflect queue position or membership.
  *
- * - [removeItem] → [QueueSnapshotDao.removeItemsFromActiveSnapshot]
+ * - [removeItem] → [QueueSnapshotDao.removeAndCompact] (remove + compact positions + fix cursor)
  * - [reorderItems] → [QueueSnapshotDao.replaceActiveSnapshot] with reordered items
  * - [clearQueue] → [QueueSnapshotDao.deactivateAllSnapshots]
  *
@@ -74,11 +75,33 @@ class QueueViewModel @Inject constructor(
 
     /**
      * Remove an episode from the active queue snapshot.
-     * Calls [QueueSnapshotDao.removeItemsFromActiveSnapshot] — never touches EpisodeEntity.
+     *
+     * Q6: positions are compacted after removal so no sparse gaps remain.
+     * Q7: [QueueSnapshotDao.updateCurrentIndex] is called with the corrected cursor:
+     * - removed item was before the playing item → decrement index by 1
+     * - removed item IS the playing item        → clamp to min(old, remaining count - 1)
+     * - removed item was after the playing item → index unchanged
+     *
+     * All three steps run atomically in [QueueSnapshotDao.removeAndCompact].
      */
     fun removeItem(episodeId: Long) {
         viewModelScope.launch {
-            queueSnapshotDao.removeItemsFromActiveSnapshot(listOf(episodeId))
+            val state = uiState.value as? QueueUiState.Active
+            val newCurrentIndex = if (state != null) {
+                val items = state.items
+                val removedPosition = items.indexOfFirst { it.snapshotItem.episodeId == episodeId }
+                val currentIndex = state.snapshot.currentItemIndex
+                val remainingCount = items.size - 1  // count after removal
+                when {
+                    removedPosition < 0 -> currentIndex  // not in list — no change
+                    removedPosition < currentIndex -> currentIndex - 1
+                    removedPosition == currentIndex -> minOf(currentIndex, remainingCount - 1).coerceAtLeast(0)
+                    else -> currentIndex  // removed item was after current — unchanged
+                }
+            } else {
+                0
+            }
+            queueSnapshotDao.removeAndCompact(listOf(episodeId), newCurrentIndex)
         }
     }
 
@@ -92,11 +115,19 @@ class QueueViewModel @Inject constructor(
     fun reorderItems(reorderedItems: List<QueueItem>) {
         viewModelScope.launch {
             val state = uiState.value as? QueueUiState.Active ?: return@launch
-            // Q5: preserve currentItemIndex and currentItemPositionMs so the playback cursor
-            // doesn't reset to position 0 after a drag-to-reorder gesture.
+            // Q5 (red-team verified): find the NEW index of the currently-playing episode
+            // in the reordered list. Simply preserving the old index is wrong — the playing
+            // episode may have moved position during the drag, so old index → wrong episode.
+            val playingId = PlaybackStateHolder.currentlyPlayingEpisodeId
+            val newIndex = if (playingId > 0) {
+                reorderedItems.indexOfFirst { it.snapshotItem.episodeId == playingId }
+                    .takeIf { it >= 0 } ?: state.snapshot.currentItemIndex
+            } else {
+                state.snapshot.currentItemIndex
+            }
             val snapshot = state.snapshot.copy(
                 id = 0,  // replaceActiveSnapshot assigns a new ID
-                currentItemIndex = state.snapshot.currentItemIndex,
+                currentItemIndex = newIndex,
                 currentItemPositionMs = state.snapshot.currentItemPositionMs
             )
             val items = reorderedItems.mapIndexed { index, qi ->

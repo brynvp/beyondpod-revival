@@ -9,13 +9,29 @@
 | Group | Status | Items |
 |-------|--------|-------|
 | Group 1 — PlaybackService resilience | ✅ **DONE** (2026-05-04) | §1.3 ghost write, QE1, Q9, Q11, Q12 |
-| Group 2 — Unsubscribe correctness | 🔲 Pending | G12, G11 |
-| Group 3 — Queue mutations | 🟡 Partial (2026-05-04) | Q5 ✅, QE6 ✅ — Q6/Q7, QE4 pending |
+| Group 2 — Unsubscribe correctness | ✅ **DONE** (2026-05-05) | G12, G11 |
+| Group 3 — Queue mutations | ✅ **DONE** (2026-05-05) | Q5, QE6, QE4, Q6, Q7 |
 | Group 4 — Worker/background | ✅ **DONE** (2026-05-04) | G15, G8, G19 |
-| Group 5 — Subscribe/data integrity | 🔲 Pending | G4, G1, G3, E2 |
-| Group 6 — UI/polish | 🔲 Pending | G5, E11, G14 |
+| Group 5 — Subscribe/data integrity | ✅ **DONE** (2026-05-05) | G4, G3, E2 (was already done) — G1 deferred |
+| Group 6 — UI/polish | ✅ **DONE** (2026-05-05) | G5, G14 — E11 was already done |
 
-**Next session: start with Group 2, then finish Group 3.**
+**All backlog groups complete. G1 (subscribe double-fetch) deferred — requires UX refactor of AddFeedViewModel preview step.**
+
+---
+
+## 🔴 Gemini Red Team Findings (2026-05-04)
+
+| # | Finding | Status |
+|---|---------|--------|
+| 1 | G11 — orphan files on unsubscribe | Already in Group 2 |
+| 2 | G12 — ghost playback on unsubscribe | Already in Group 2 |
+| 3 | Q5 — `currentItemIndex` points to wrong episode after reorder if playing item moved | **Fixed this session** — now resolves new position of playing `episodeId` in reordered list via `PlaybackStateHolder` |
+| 4 | QE4 — auto-advance is feed-based not queue-based | **Elevated to High.** Already in Group 3 pending. Next session priority. |
+| 5 | G1 — double fetch on subscribe | Already in Group 5 |
+| 6 | Q12 — no skip-to-next on content errors | Noted. Skip logic deferred until QE4 is implemented (needs queue advance first) + Task #11 snackbar |
+| 7 | Q9 ✅ — playing episode delete guard | Verified working |
+| 8 | E11 ✅ — primaryCategoryId nulled on category delete | **Already implemented** — `CategoryRepositoryImpl` + `FeedListViewModel` both handle this. Removed from backlog. |
+| 9 | QE6 ✅ — zero-item queue shows Empty state | Verified working |
 
 ---
 

@@ -1,6 +1,8 @@
 package mobi.beyondpod.revival.data.repository
 
+import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.text.Html
@@ -12,6 +14,8 @@ import mobi.beyondpod.revival.data.local.dao.CategoryDao
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
 import mobi.beyondpod.revival.data.local.dao.SmartPlaylistDao
+import mobi.beyondpod.revival.service.PlaybackService
+import mobi.beyondpod.revival.service.PlaybackStateHolder
 import mobi.beyondpod.revival.data.local.entity.BlockSource
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedCategoryCrossRef
@@ -21,7 +25,9 @@ import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.local.entity.PlayState
 import mobi.beyondpod.revival.data.local.entity.PlaylistRuleMode
+import mobi.beyondpod.revival.data.local.entity.RuleField
 import mobi.beyondpod.revival.data.local.entity.SmartPlaylistBlock
+import mobi.beyondpod.revival.data.local.entity.SmartPlaylistRule
 import mobi.beyondpod.revival.data.parser.FeedParser
 import mobi.beyondpod.revival.data.parser.ParsedEpisode
 import mobi.beyondpod.revival.data.parser.ParsedFeed
@@ -38,6 +44,7 @@ class FeedRepositoryImpl @Inject constructor(
     private val feedParser: FeedParser,
     private val smartPlaylistDao: SmartPlaylistDao,
     private val gson: Gson,
+    private val downloadManager: DownloadManager,
     @ApplicationContext private val context: Context
 ) : FeedRepository {
 
@@ -51,6 +58,11 @@ class FeedRepositoryImpl @Inject constructor(
     override suspend fun subscribeToFeed(url: String): Result<FeedEntity> = runCatching {
         val existing = feedDao.getFeedByUrl(url)
         if (existing != null) return@runCatching existing
+
+        // G4: Reject HTML pages before doing a full RSS parse.
+        // HEAD is cheap — no body download. If the server doesn't support HEAD (returns 4xx/5xx),
+        // we skip the content-type check and let fetchAndParse fail naturally with a parse error.
+        validateFeedContentType(url).getOrElse { e -> throw e }
 
         val parsed = fetchAndParse(url).getOrNull()?.first
         val placeholder = FeedEntity(
@@ -79,28 +91,78 @@ class FeedRepositoryImpl @Inject constructor(
 
     override suspend fun deleteFeed(id: Long, deleteDownloads: Boolean) {
         val feed = feedDao.getFeedById(id) ?: return
+
+        // G12: stop playback if the currently-playing episode belongs to this feed.
+        // Must run BEFORE feedDao.deleteFeed() so the episode row still exists for the feedId check.
+        val playingId = PlaybackStateHolder.currentlyPlayingEpisodeId
+        if (playingId > 0) {
+            val playingEp = episodeDao.getEpisodeById(playingId)
+            if (playingEp?.feedId == id) {
+                context.startService(
+                    Intent(context, PlaybackService::class.java).apply {
+                        action = PlaybackService.ACTION_STOP_PLAYBACK
+                    }
+                )
+            }
+        }
+
+        // G11: cancel any in-flight DownloadManager jobs for this feed's episodes.
+        // Must run BEFORE feedDao.deleteFeed() — the CASCADE delete will wipe episode rows,
+        // losing their downloadId values and making cancellation impossible afterward.
+        val inFlight = episodeDao.getDownloadingEpisodesForFeed(id)
+        if (inFlight.isNotEmpty()) {
+            val dmIds = inFlight.mapNotNull { it.downloadId }.toLongArray()
+            if (dmIds.isNotEmpty()) downloadManager.remove(*dmIds)
+        }
+
+        // Delete local files on-disk
         if (deleteDownloads) {
             episodeDao.getEpisodesForFeedList(id).forEach { ep ->
                 ep.localFilePath?.let { java.io.File(it).delete() }
             }
         }
+
         feedDao.deleteFeed(feed)
         prunePlaylistBlocksForFeed(id)
     }
 
     /**
-     * Remove any SmartPlaylistBlock entries whose sourceId matches [feedId].
-     * Called after deleting a feed so SEQUENTIAL_BLOCKS playlists don't reference a ghost feed.
+     * Remove any playlist rules or blocks that reference [feedId] after feed deletion.
+     *
+     * - SEQUENTIAL_BLOCKS: removes [SmartPlaylistBlock] entries where source=FEED and sourceId=feedId.
+     * - FILTER_RULES (G14): removes [SmartPlaylistRule] conditions where field=FEED_ID and
+     *   value=feedId.toString(). If removing the condition leaves a playlist with zero rules,
+     *   the playlist is cleared to an empty rule set (playlist itself is preserved so the user
+     *   can see it and reconfigure — deleting silently would be surprising).
+     *
+     * Called after deleting a feed so playlists don't reference a ghost feed.
      */
     private suspend fun prunePlaylistBlocksForFeed(feedId: Long) {
         smartPlaylistDao.getAllPlaylistsList().forEach { playlist ->
-            if (playlist.ruleMode != PlaylistRuleMode.SEQUENTIAL_BLOCKS) return@forEach
-            val blocks = runCatching {
-                gson.fromJson(playlist.rulesJson, Array<SmartPlaylistBlock>::class.java).toList()
-            }.getOrElse { return@forEach }
-            val pruned = blocks.filter { it.source != BlockSource.FEED || it.sourceId != feedId }
-            if (pruned.size != blocks.size) {
-                smartPlaylistDao.upsertPlaylist(playlist.copy(rulesJson = gson.toJson(pruned)))
+            when (playlist.ruleMode) {
+                PlaylistRuleMode.SEQUENTIAL_BLOCKS -> {
+                    val blocks = runCatching {
+                        gson.fromJson(playlist.rulesJson, Array<SmartPlaylistBlock>::class.java).toList()
+                    }.getOrElse { return@forEach }
+                    val pruned = blocks.filter { it.source != BlockSource.FEED || it.sourceId != feedId }
+                    if (pruned.size != blocks.size) {
+                        smartPlaylistDao.upsertPlaylist(playlist.copy(rulesJson = gson.toJson(pruned)))
+                    }
+                }
+                PlaylistRuleMode.FILTER_RULES -> {
+                    // G14: Remove FEED_ID filter conditions referencing the deleted feed.
+                    val rules = runCatching {
+                        gson.fromJson(playlist.rulesJson, Array<SmartPlaylistRule>::class.java).toList()
+                    }.getOrElse { return@forEach }
+                    val pruned = rules.filter { rule ->
+                        !(rule.field == RuleField.FEED_ID && rule.value == feedId.toString())
+                    }
+                    if (pruned.size != rules.size) {
+                        // Write pruned rules back. An empty rule set means "match everything" —
+                        // better than silently deleting the playlist the user may have customised.
+                        smartPlaylistDao.upsertPlaylist(playlist.copy(rulesJson = gson.toJson(pruned)))
+                    }
+                }
             }
         }
     }
@@ -155,6 +217,12 @@ class FeedRepositoryImpl @Inject constructor(
             if (upsertedIds.isNotEmpty()) {
                 episodeDao.archiveRemovedEpisodes(id, upsertedIds)
             }
+
+            // G3: Prune old played+undownloaded rows to prevent DB bloat.
+            // 180-day cutoff preserves recent history for feed display continuity.
+            // Starred, protected, and downloaded episodes are always kept (enforced in DAO).
+            val cutoff = System.currentTimeMillis() - (180L * 86_400_000L)
+            episodeDao.pruneOldEpisodeRows(id, cutoff)
         }
     }
 
@@ -343,6 +411,32 @@ class FeedRepositoryImpl @Inject constructor(
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * G4: Validate that the URL is likely a podcast feed, not a regular webpage.
+     *
+     * Uses a HEAD request (no body download) to check the Content-Type header.
+     * Rejects `text/html` outright — that's a browser page, not a feed.
+     * Ambiguous types (text/plain, application/octet-stream, missing header) are allowed
+     * through so that [fetchAndParse] can attempt to parse and fail with a clearer SAX error.
+     *
+     * If the server doesn't support HEAD (returns 4xx/5xx), the check is skipped gracefully
+     * — [fetchAndParse] will handle the error on the subsequent GET.
+     */
+    private fun validateFeedContentType(url: String): Result<Unit> = runCatching {
+        val headReq = Request.Builder().url(url)
+            .head()
+            .header("User-Agent", "BeyondPodRevival/5.0")
+            .build()
+        okHttpClient.newCall(headReq).execute().use { resp ->
+            // Only act on definitive 2xx responses — let non-2xx fall through to fetchAndParse
+            if (!resp.isSuccessful) return@runCatching
+            val contentType = resp.header("Content-Type") ?: return@runCatching
+            check(!contentType.contains("text/html", ignoreCase = true)) {
+                "URL appears to be a website, not a podcast feed. Please check the RSS/Atom feed URL."
+            }
+        }
+    }
 
     /**
      * Fetch and parse the RSS at [url]. Returns (ParsedFeed, finalUrl) where finalUrl is the

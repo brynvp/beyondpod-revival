@@ -350,7 +350,7 @@
 | G4  | Medium   | No URL validation before creating FeedEntity |
 | G15 | Medium   | `runGlobalRetentionCleanup` runs on viewModelScope, should use IO dispatcher |
 | Q10 | Medium   | Background refresh + retention cleanup can soft-delete queued episodes → silent switch from local file to stream |
-| QE4 | Medium   | New queue built while playing doesn't update PlaybackService — auto-advance uses old context |
+| QE4 | **High** | Auto-advance is feed-based not queue-based — core architecture violation. `onPlaybackStateChanged` calls `getNextNewerEpisode(feedId)` instead of reading the active `QueueSnapshot`. Flagged by Gemini red team. |
 | QE6 | Medium   | Empty queue after all items removed shows Active state with 0 items, not Empty state |
 | G19 | Low-Med  | Per-feed keepCount reduction doesn't trigger immediate cleanup |
 | G14 | Low      | FILTER_RULES playlists not cleaned up on feed delete |
@@ -358,7 +358,7 @@
 | Q6  | Low      | `removeItemsFromActiveSnapshot` leaves gaps in position sequence — non-contiguous positions |
 | Q7  | Low      | `removeItem` doesn't update `currentItemIndex` → cursor may skip an episode after removal |
 | E2  | Low      | Title+Duration dedup is dead code — never called in upsert path |
-| E11 | Low      | `FeedEntity.primaryCategoryId` not nulled when category deleted |
+| E11 | ~~Low~~  | ~~`FeedEntity.primaryCategoryId` not nulled when category deleted~~ **ALREADY FIXED** — `CategoryRepositoryImpl.deleteCategory` calls `nullifyPrimaryCategory` + `nullifySecondaryCategory`; `FeedListViewModel` also defends against stale IDs. Verified by Gemini red team. |
 | Q3  | Low      | No maximum queue size enforced — 500-item snapshot possible |
 | Q4  | Low      | `sourcePlaylistId` becomes dangling reference if playlist deleted after snapshot build |
 | Q8  | Info     | Late-completing downloads are handled correctly via live `getEpisodeById` in PlaybackService, not via snapshot field |

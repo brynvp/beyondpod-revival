@@ -72,6 +72,41 @@ interface QueueSnapshotDao {
     """)
     suspend fun removeItemsFromActiveSnapshot(episodeIds: List<Long>)
 
+    // Q6: Renumber positions after a removal so they are contiguous (0, 1, 2, …).
+    // The correlated subquery counts items with a lower position in the same snapshot —
+    // that count is exactly the new 0-based position for each surviving item.
+    @Query("""
+        UPDATE queue_snapshot_items
+        SET position = (
+            SELECT COUNT(*) FROM queue_snapshot_items i2
+            WHERE i2.snapshotId = queue_snapshot_items.snapshotId
+              AND i2.position < queue_snapshot_items.position
+        )
+        WHERE snapshotId = (SELECT id FROM queue_snapshots WHERE isActive = 1 LIMIT 1)
+    """)
+    suspend fun compactPositions()
+
+    // Q7: Update the current-item cursor in the active snapshot.
+    // Called after a removal shifts the playing item's effective index.
+    @Query("UPDATE queue_snapshots SET currentItemIndex = :index WHERE isActive = 1")
+    suspend fun updateCurrentIndex(index: Int)
+
+    /**
+     * Q6+Q7: Atomic remove → compact → index-fix.
+     *
+     * [newCurrentIndex] is pre-computed by the caller (QueueViewModel), which has full
+     * knowledge of the pre-removal snapshot state:
+     * - removed item was before current  → decrement index by 1
+     * - removed item was the current     → clamp to min(old, remaining count - 1)
+     * - removed item was after current   → unchanged
+     */
+    @Transaction
+    suspend fun removeAndCompact(episodeIds: List<Long>, newCurrentIndex: Int) {
+        removeItemsFromActiveSnapshot(episodeIds)
+        compactPositions()
+        updateCurrentIndex(newCurrentIndex)
+    }
+
     // Reorder: update position value for a single item
     @Query("UPDATE queue_snapshot_items SET position = :position WHERE id = :itemId")
     suspend fun updateItemPosition(itemId: Long, position: Int)

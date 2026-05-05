@@ -10,10 +10,12 @@ import mobi.beyondpod.revival.data.local.entity.PlayState
 
 @Dao
 interface EpisodeDao {
-    @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY pubDate DESC")
+    // G5: isArchived ASC pushes archived episodes to the bottom of each feed's list.
+    // Within each group (live vs archived), episodes are sorted newest-first.
+    @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY isArchived ASC, pubDate DESC")
     fun getEpisodesForFeed(feedId: Long): Flow<List<EpisodeEntity>>
 
-    @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY pubDate DESC")
+    @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY isArchived ASC, pubDate DESC")
     suspend fun getEpisodesForFeedList(feedId: Long): List<EpisodeEntity>
 
     @Query("""
@@ -239,6 +241,15 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE downloadId = :downloadManagerId LIMIT 1")
     suspend fun getEpisodeByDownloadManagerId(downloadManagerId: Long): EpisodeEntity?
 
+    // G11: episodes currently in-flight (DOWNLOADING or QUEUED) for a given feed.
+    // Called before feedDao.deleteFeed() so the CASCADE hasn't wiped the rows yet.
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId AND downloadState IN ('DOWNLOADING', 'QUEUED')
+        AND downloadId IS NOT NULL
+    """)
+    suspend fun getDownloadingEpisodesForFeed(feedId: Long): List<EpisodeEntity>
+
     // Partial download resume support (legacy — kept for DB schema compatibility)
     @Query("UPDATE episodes SET downloadBytesDownloaded = :bytes WHERE id = :episodeId")
     suspend fun updateDownloadProgress(episodeId: Long, bytes: Long)
@@ -246,6 +257,23 @@ interface EpisodeDao {
     // Mark as archived (episode no longer appears in feed RSS)
     @Query("UPDATE episodes SET isArchived = 1 WHERE feedId = :feedId AND id NOT IN (:activeGuids)")
     suspend fun archiveRemovedEpisodes(feedId: Long, activeGuids: List<Long>)
+
+    // G3: Prune old episode rows to prevent DB bloat. Deletes rows that are:
+    //   • NOT_DOWNLOADED or DELETED (no file to lose)
+    //   • Already PLAYED (history no longer needed)
+    //   • Not starred and not protected (user-flagged episodes are always kept)
+    //   • Older than [cutoffMs] (typically 180 days)
+    // Archived rows (no longer in RSS) that meet all criteria are also pruned.
+    @Query("""
+        DELETE FROM episodes
+        WHERE feedId = :feedId
+          AND downloadState IN ('NOT_DOWNLOADED', 'DELETED')
+          AND playState = 'PLAYED'
+          AND isProtected = 0
+          AND isStarred = 0
+          AND pubDate < :cutoffMs
+    """)
+    suspend fun pruneOldEpisodeRows(feedId: Long, cutoffMs: Long)
 
     // Played fraction update (for "Played Portion" sort)
     @Query("UPDATE episodes SET playedFraction = :fraction WHERE id = :episodeId")
