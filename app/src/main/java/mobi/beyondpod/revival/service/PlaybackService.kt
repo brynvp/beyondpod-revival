@@ -189,13 +189,17 @@ class PlaybackService : MediaSessionService() {
                 if (episodeId >= 0) loadAndPlay(episodeId)
             }
             ACTION_STOP_PLAYBACK  -> {
-                // Called by DeleteFeedUseCase (G12) when unsubscribing a feed whose episode
-                // is currently playing. Stop the player and clear all tracking state.
+                // Called by FeedRepositoryImpl (G12) when unsubscribing a feed whose episode
+                // is currently playing. Stop the player, clear all tracking state, and tear
+                // down the foreground service so the media notification disappears immediately.
                 activePlayer.stop()
                 currentEpisodeId = -1L
                 currentStreamUrl = null
                 PlaybackStateHolder.currentlyPlayingEpisodeId = -1L
                 stopPositionSaving()
+                @Suppress("DEPRECATION")
+                stopForeground(true)   // removes notification immediately (pre-API-33 form, min SDK 26)
+                stopSelf()
             }
         }
         return START_STICKY
@@ -617,17 +621,38 @@ class PlaybackService : MediaSessionService() {
             // Stop unconditionally — leaves the player in STATE_IDLE with no automatic retry.
             activePlayer.stop()
 
-            // Q12: network-aware error handling.
-            // If the failure is a network/IO error and we're offline, leave the player stopped
-            // so the user can resume manually when connectivity returns.
-            // If we have connectivity but the stream failed (bad URL, server error), this is
-            // a content error — queue-skip logic will land here once QE4 / Task #11 lands.
+            // Q12: network-aware error handling + queue skip on content errors.
             val isNetworkError = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
                     || error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
-            if (isNetworkError && !isOnWifi()) {
-                // Offline — stay stopped. TODO: surface "Playback paused — no network" snackbar (Task #11).
+
+            when {
+                isNetworkError && !isOnWifi() -> {
+                    // Truly offline — stay stopped so the user can resume manually when
+                    // connectivity returns. TODO: surface snackbar (Task #11).
+                }
+                else -> {
+                    // Content error (bad URL, HTTP 404, codec failure) OR a network error
+                    // where we still have connectivity (server-side problem).
+                    // Skip to the next item in the active queue rather than stalling the session.
+                    // Does NOT mark the failed episode as PLAYED.
+                    serviceScope.launch {
+                        val failedId = currentEpisodeId
+                        if (failedId <= 0) return@launch
+                        val snapshot = queueSnapshotDao.getActiveSnapshotOnce() ?: return@launch
+                        val items = queueSnapshotDao.getSnapshotItemsList(snapshot.id)
+                        val currentIndex = items.indexOfFirst { it.episodeId == failedId }
+                        if (currentIndex >= 0 && currentIndex + 1 < items.size) {
+                            val nextIndex = currentIndex + 1
+                            queueSnapshotDao.updatePlaybackPosition(
+                                index = nextIndex,
+                                positionMs = 0L
+                            )
+                            loadAndPlay(items[nextIndex].episodeId)
+                        }
+                        // else: no next item — player stays stopped cleanly.
+                    }
+                }
             }
-            // Content errors (bad URL, HTTP 404, etc.) logged implicitly by ExoPlayer.
         }
     }
 }

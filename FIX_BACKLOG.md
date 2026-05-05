@@ -15,7 +15,16 @@
 | Group 5 — Subscribe/data integrity | ✅ **DONE** (2026-05-05) | G4, G3, E2 (was already done) — G1 deferred |
 | Group 6 — UI/polish | ✅ **DONE** (2026-05-05) | G5, G14 — E11 was already done |
 
-**All backlog groups complete. G1 (subscribe double-fetch) deferred — requires UX refactor of AddFeedViewModel preview step.**
+**All backlog groups complete. Post-audit fixes applied 2026-05-05 (see below). G1 deferred.**
+
+### Post-Audit Fixes (Gemini red team pass 2 — 2026-05-05)
+
+| Item | Fix |
+|------|-----|
+| Q12 — content error skip | `onPlayerError` now skips to next queue item on content/reachable-server errors; stays stopped when truly offline |
+| Item 10 — foreground state | `ACTION_STOP_PLAYBACK` now calls `stopForeground(true)` + `stopSelf()` — notification dismissed immediately |
+| G1 — double fetch | Deferred. Requires UX refactor of `AddFeedViewModel` preview step |
+| isProtected in bulk delete | Accepted. Auto-deletion veto doesn't apply to manual user-initiated unsubscribe. Documented. |
 
 ---
 
