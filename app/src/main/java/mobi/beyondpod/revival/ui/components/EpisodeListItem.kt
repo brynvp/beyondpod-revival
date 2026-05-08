@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -222,6 +223,19 @@ fun EpisodeListItem(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
                 )
+                DownloadStateEnum.FAILED -> {
+                    // Tappable warning — lets user retry a failed download.
+                    if (onDownloadClick != null) {
+                        IconButton(onClick = onDownloadClick) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Download failed — tap to retry",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
                 else -> {
                     if (onDownloadClick != null) {
                         // Full 48dp touch target per Material guidelines — don't constrain to

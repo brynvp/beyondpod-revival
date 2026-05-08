@@ -31,11 +31,15 @@ Update this line at the start of each session to reflect where you are:
 - Phase 7: Import/Export + Settings
 - Phase 8: Widgets + Polish ✓ COMPLETE
 - Post-build: Real-device QA fixes ✓ COMPLETE
-- **Early Beta: functional polish, edge cases, and open QA items — see QA_REVIEW.md**
+- **Early Beta: full audit backlog complete (Groups 1–6 + post-audit Q12/foreground fixes). Ready for device QA.**
 
-**Room DB version**: 3 (migration 2→3 adds standalone indices; migration 1→2 adds compound indices)
+**Room DB version**: 5
+- Migration 1→2: compound indices (feedId+pubDate, feedId+playState, feedId+downloadState, queue snapshot position)
+- Migration 2→3: standalone indices (downloadState, downloadedAt, isStarred, lastPlayed)
+- Migration 3→4: feed_category_cross_ref recreated with categoryId FK + ON DELETE CASCADE
+- Migration 4→5: virtual folder feed columns (isVirtualFeed, virtualFeedFolderPath) — PRAGMA-guarded ALTER TABLE
 
-**Spec sections for current phase**: Reference QA_REVIEW.md for all open items and session history.
+**Spec sections for current phase**: See `FEED_DOWNLOAD_AUDIT.md` for the full gap analysis and `FIX_BACKLOG.md` for resolution status. `red_team_qa.md` tracks Gemini red team findings.
 
 ---
 
@@ -53,9 +57,11 @@ These are design decisions already made. Do not change them without strong reaso
 3. **SmartPlay has two modes** — `SEQUENTIAL_BLOCKS` (Standard, default, legacy-compatible)
    and `FILTER_RULES` (Advanced). New playlists default to SEQUENTIAL_BLOCKS. See §5.1.
 
-4. **isProtected is an absolute veto** — `EpisodeEntity.isProtected = true` means never
-   auto-delete under any circumstances. Enforced at cleanup, download deletion, and manual
-   delete prompts. No exceptions.
+4. **isProtected is an absolute veto on auto-deletion** — `EpisodeEntity.isProtected = true`
+   means never auto-delete (retention cleanup, age cleanup, global cleanup). Enforced at all
+   cleanup paths and download deletion. Exception: manual unsubscribe with "delete downloads"
+   is explicit user intent — protected files are deleted alongside others (the DB row is gone
+   via CASCADE anyway; preserving the file would create an unmanaged orphan).
 
 5. **Episode identity is multi-key** — dedup priority: GUID → URL → Title+Duration heuristic
    → file hash. Never assume GUID alone is reliable. See §5.1 Episode Identity Strategy.

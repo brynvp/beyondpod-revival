@@ -52,6 +52,9 @@ class EpisodeRepositoryImpl @Inject constructor(
     override fun getLatestEpisodes(limit: Int): Flow<List<EpisodeEntity>> =
         episodeDao.getLatestEpisodes(limit)
 
+    override fun getLatestDownloads(limit: Int): Flow<List<EpisodeEntity>> =
+        episodeDao.getDownloadedByPubDate(limit)
+
     override fun getRecentDownloads(limit: Int): Flow<List<EpisodeEntity>> =
         episodeDao.getDownloadedEpisodes().map { it.take(limit) }
 

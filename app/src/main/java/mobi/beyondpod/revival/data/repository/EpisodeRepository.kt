@@ -28,6 +28,7 @@ interface EpisodeRepository {
 
     // ── What to Play sections ─────────────────────────────────────────────────
     fun getLatestEpisodes(limit: Int = 50): Flow<List<EpisodeEntity>>
+    fun getLatestDownloads(limit: Int = 50): Flow<List<EpisodeEntity>>
     fun getRecentDownloads(limit: Int = 5): Flow<List<EpisodeEntity>>
     fun getRecentlyPlayed(limit: Int = 5): Flow<List<EpisodeEntity>>
     fun getStarredEpisodes(limit: Int = 50): Flow<List<EpisodeEntity>>

@@ -40,8 +40,8 @@ class MyEpisodesViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    // Flat list — latest 50 episodes across all feeds, newest pubDate first
-    val uiState: StateFlow<MyEpisodesUiState> = episodeRepository.getLatestEpisodes(50)
+    // "What to Play" — DOWNLOADED episodes only, newest pubDate first
+    val uiState: StateFlow<MyEpisodesUiState> = episodeRepository.getLatestDownloads(50)
         .map { episodes -> MyEpisodesUiState.Success(episodes) }
         .stateIn(
             scope = viewModelScope,

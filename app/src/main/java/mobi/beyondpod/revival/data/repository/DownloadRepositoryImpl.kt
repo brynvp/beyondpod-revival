@@ -115,6 +115,10 @@ class DownloadRepositoryImpl @Inject constructor(
     private suspend fun enqueueDownload(episodeId: Long, mobileAllowed: Boolean) {
         val episode = episodeDao.getEpisodeById(episodeId) ?: return
 
+        // Don't double-enqueue — if already in flight, leave DownloadManager to finish it.
+        if (episode.downloadState == DownloadStateEnum.DOWNLOADING ||
+            episode.downloadState == DownloadStateEnum.QUEUED) return
+
         // Enforce WiFi-only constraint. Skip entirely (do NOT enqueue) when:
         //   - WiFi-only is on (per-feed override → global) AND
         //   - not currently on WiFi/Ethernet AND
@@ -125,12 +129,12 @@ class DownloadRepositoryImpl @Inject constructor(
         val wifiOnly = feed?.downloadOnlyOnWifi ?: wifiOnlyGlobal
         if (wifiOnly && !isOnWifi() && !mobileAllowed) return
 
-        // Build destination path
+        // Build destination path — fall back to internal storage if external unavailable.
         val safeTitle = episode.title.take(64).replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
         val ext = episode.url.substringAfterLast('.').substringBefore('?').lowercase()
             .let { if (it.length in 2..4 && it.all { c -> c.isLetter() }) it else "mp3" }
-        val dir = File(context.getExternalFilesDir(null), "podcasts/${episode.feedId}")
-            .also { it.mkdirs() }
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val dir = File(baseDir, "podcasts/${episode.feedId}").also { it.mkdirs() }
         val outputFile = File(dir, "$safeTitle.$ext")
 
         // When WiFi-only is set and the user has NOT explicitly approved mobile data,
@@ -145,14 +149,27 @@ class DownloadRepositoryImpl @Inject constructor(
 
         val request = DownloadManager.Request(Uri.parse(episode.url))
             .setTitle(episode.title)
-            .setDescription(context.getString(android.R.string.unknownName).let { "BeyondPod" })
-            .setMimeType(episode.mimeType.ifEmpty { "audio/mpeg" })
+            .setDescription("BeyondPod")
+            .setMimeType(episode.mimeType.trim().ifEmpty { "audio/mpeg" })
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
             .setDestinationUri(Uri.fromFile(outputFile))
             .addRequestHeader("User-Agent", "BeyondPodRevival/5.0")
             .setAllowedNetworkTypes(networkTypes)
 
-        val dmId = downloadManager.enqueue(request)
+        // Wrap enqueue — DownloadManager.enqueue() can throw IllegalArgumentException
+        // (bad URI, bad MIME type, destination conflict). Without this, the failure is
+        // swallowed by the coroutine handler and the episode is stuck NOT_DOWNLOADED
+        // with no feedback. On failure: log + set FAILED so the retry button appears.
+        val dmId = try {
+            downloadManager.enqueue(request)
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "DownloadRepo",
+                "DownloadManager.enqueue failed episode=$episodeId url=${episode.url}: ${e.message}", e
+            )
+            episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
+            return
+        }
         episodeDao.updateDownloadIdAndState(episodeId, dmId, DownloadStateEnum.DOWNLOADING)
     }
 
