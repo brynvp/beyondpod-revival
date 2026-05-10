@@ -6,6 +6,11 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import mobi.beyondpod.revival.data.local.dao.FeedDao
 import mobi.beyondpod.revival.data.repository.DownloadRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
@@ -54,7 +59,16 @@ class FeedUpdateWorker @AssistedInject constructor(
                 // Clear any stale lastUpdateFailed flags left by the old worker bug before
                 // processing feeds — ensures the warning icon only fires on real failures.
                 feedDao.clearAllUpdateFailedFlags()
-                feedDao.getAllFeedsList().forEach { processFeed(it.id, isManual) }
+                val feeds = feedDao.getAllFeedsList()
+                // Parallel refresh — each feed has its own per-feed Mutex inside refreshFeed(),
+                // so concurrent processing of different feeds is safe. Semaphore caps at 6
+                // to avoid saturating the network and SQLite connection pool simultaneously.
+                val semaphore = Semaphore(6)
+                coroutineScope {
+                    feeds.map { feed ->
+                        async { semaphore.withPermit { processFeed(feed.id, isManual) } }
+                    }.awaitAll()
+                }
             } else {
                 processFeed(feedId, isManual)
             }

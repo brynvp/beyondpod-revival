@@ -2,7 +2,12 @@ package mobi.beyondpod.revival.ui.screens.feedlist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +18,7 @@ import mobi.beyondpod.revival.data.local.entity.CategoryEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.repository.CategoryRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
+import mobi.beyondpod.revival.service.FeedUpdateWorker
 import javax.inject.Inject
 
 data class CategoryWithFeeds(
@@ -39,7 +45,8 @@ sealed interface FeedListUiState {
 @HiltViewModel
 class FeedListViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    private val workManager: WorkManager
 ) : ViewModel() {
 
     private val collapsedIds    = MutableStateFlow<Set<Long>>(emptySet())
@@ -66,9 +73,26 @@ class FeedListViewModel @Inject constructor(
     )
 
     fun refresh() {
+        // Route through FeedUpdateWorker (ALL_FEEDS) so every feed goes through the full
+        // pipeline: fetch → parse → upsert → autoDownloadNewEpisodes.
+        // The old direct refreshAllFeeds() call ran 30 feeds serially in the ViewModel coroutine
+        // (30–150 second spinner) and never called autoDownloadNewEpisodes, so no downloads
+        // ever triggered from this screen. REPLACE = a second pull while a refresh is already
+        // running cancels the old job and starts fresh (user intent is "refresh now").
+        workManager.enqueueUniqueWork(
+            "refresh_all_feeds",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<FeedUpdateWorker>()
+                .setInputData(workDataOf(
+                    FeedUpdateWorker.KEY_FEED_ID  to FeedUpdateWorker.ALL_FEEDS,
+                    FeedUpdateWorker.KEY_IS_MANUAL to true
+                ))
+                .build()
+        )
+        // Spinner: show briefly, Room Flows update the UI as each feed completes.
         viewModelScope.launch {
             _isRefreshing.value = true
-            feedRepository.refreshAllFeeds()
+            delay(1_500)
             _isRefreshing.value = false
         }
     }
