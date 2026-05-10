@@ -13,8 +13,13 @@ android {
         applicationId = "mobi.beyondpod.revival"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.2-beta"
+
+        // Build timestamp injected at compile time — shows in About screen so every
+        // installed build is uniquely identifiable without needing a version bump.
+        buildConfigField("String", "BUILD_TIME",
+            "\"${java.time.Instant.now().toString().substring(0, 16).replace('T', ' ')} UTC\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -1,6 +1,7 @@
 package mobi.beyondpod.revival.service
 
 import android.content.Context
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -14,6 +15,8 @@ import kotlinx.coroutines.sync.withPermit
 import mobi.beyondpod.revival.data.local.dao.FeedDao
 import mobi.beyondpod.revival.data.repository.DownloadRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
+
+private const val TAG = "BP.Worker"
 
 /**
  * Refreshes one feed (or all feeds) and enforces post-update cleanup rules.
@@ -79,7 +82,11 @@ class FeedUpdateWorker @AssistedInject constructor(
     }
 
     private suspend fun processFeed(feedId: Long, isManual: Boolean = false) {
-        val feed = feedDao.getFeedById(feedId) ?: return
+        val feed = feedDao.getFeedById(feedId) ?: run {
+            Log.w(TAG, "processFeed: feed $feedId not found — skipping")
+            return
+        }
+        Log.d(TAG, "processFeed START feed=$feedId '${feed.title}' manual=$isManual virtual=${feed.isVirtualFeed}")
 
         // ── Virtual folder feeds: scan for new audio files, skip RSS fetch ───
         if (feed.isVirtualFeed) {
@@ -93,6 +100,8 @@ class FeedUpdateWorker @AssistedInject constructor(
         // on every feed when the device is briefly offline. The warning icon is only meaningful
         // for manual pull-to-refresh failures (FeedDetailViewModel.refresh uses the default true).
         val refreshResult = feedRepository.refreshFeed(feedId, markFailure = false)
+        Log.d(TAG, "processFeed REFRESH feed=$feedId '${feed.title}' success=${refreshResult.isSuccess}" +
+            if (refreshResult.isFailure) " err=${refreshResult.exceptionOrNull()?.message}" else "")
 
         // ── Step 5: Enforce maxTrackAgeDays ─────────────────────────────────
         // Full age-based cleanup requires a DAO query keyed on pubDate + maxTrackAgeDays.
@@ -103,10 +112,14 @@ class FeedUpdateWorker @AssistedInject constructor(
         // Running cleanup on a stale snapshot (fetch failed, no new episodes) risks
         // deleting valid downloads without replacing them. Mirrors FeedDetailViewModel.refresh().
         if (refreshResult.isSuccess) {
+            Log.d(TAG, "processFeed DOWNLOAD feed=$feedId '${feed.title}'")
             downloadRepository.autoDownloadNewEpisodes(feedId, isManualRefresh = isManual)
+        } else {
+            Log.w(TAG, "processFeed SKIP-DOWNLOAD feed=$feedId '${feed.title}' — refresh failed")
         }
 
         // ── Step 8: Auto-add to My Episodes (Phase 4 stub) ──────────────────
         // ── Step 9: New-episode notification  (Phase 4 stub) ────────────────
+        Log.d(TAG, "processFeed DONE feed=$feedId '${feed.title}'")
     }
 }

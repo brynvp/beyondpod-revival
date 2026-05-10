@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
+import mobi.beyondpod.revival.BuildConfig
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
@@ -309,7 +310,10 @@ fun SettingsScreen(
             // ── About ─────────────────────────────────────────────────────────
             item { SectionHeader("About", Icons.Default.Info) }
             item {
-                PrefItem(title = "BeyondPod Revival", subtitle = "Version 5.0.0 — Open source, MIT License")
+                PrefItem(
+                    title    = "BeyondPod Revival",
+                    subtitle = "v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_TIME}\nOpen source, MIT License"
+                )
             }
 
             item { Spacer(Modifier.height(32.dp)) }
