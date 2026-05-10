@@ -406,14 +406,27 @@ class DownloadRepositoryImpl @Inject constructor(
                     episodeDao.getNotDownloadedNewest(feedId, slots)
                 else emptyList()
 
+                // Diagnostic: log state breakdown when slots exist but nothing to download.
+                if (toDownload.isEmpty() && slots > 0) {
+                    val allEps = episodeDao.getEpisodesForFeedList(feedId)
+                    val states = allEps.groupBy { it.downloadState.name }.mapValues { it.value.size }
+                    val archived = allEps.count { it.isArchived }
+                    Log.d(TAG, "autoDownload DIAG NEWEST feed=$feedId total=${allEps.size} archived=$archived states=$states")
+                }
+
                 // Step B — retention: only make room for episodes that are NEWER than the current
                 // window. Old backlog episodes (pubDate < newestDownloaded) don't shrink the keep
                 // threshold — otherwise having any backlog at all would delete all downloads.
+                //
+                // Guard: when in-flight already meets/exceeds keepCount, do NOT delete currently-
+                // downloaded files. Without this, keepCount=3 + inFlight=10 → effectiveKeep=0 →
+                // all downloaded files wiped on every refresh pass.
                 if (keepCount != null) {
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
                     val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
                     val trulyNew      = toDownload.count { it.pubDate > newestDate }
-                    val effectiveKeep = (keepCount - inFlight - trulyNew).coerceAtLeast(0)
+                    val effectiveKeep = if (inFlight >= keepCount) keepCount
+                                        else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
                     applyRetentionCleanup(allDownloaded, effectiveKeep)
                 }
                 // Step C — enqueue
@@ -461,12 +474,25 @@ class DownloadRepositoryImpl @Inject constructor(
                 else emptyList()
                 Log.d(TAG, "autoDownload GLOBAL feed=$feedId inFlight=$inFlight slots=$slots toDownload=${toDownload.size} downloadCount=$downloadCount")
 
-                // Step B — retention: only count truly new (newer than window) when shrinking threshold
+                // Diagnostic: log state breakdown when slots exist but nothing to download.
+                if (toDownload.isEmpty() && slots > 0) {
+                    val allEps = episodeDao.getEpisodesForFeedList(feedId)
+                    val states = allEps.groupBy { it.downloadState.name }.mapValues { it.value.size }
+                    val archived = allEps.count { it.isArchived }
+                    Log.d(TAG, "autoDownload DIAG GLOBAL feed=$feedId total=${allEps.size} archived=$archived states=$states")
+                }
+
+                // Step B — retention: only count truly new (newer than window) when shrinking threshold.
+                //
+                // Guard: when in-flight already meets/exceeds keepCount, do NOT delete currently-
+                // downloaded files. Without this, keepCount=3 + inFlight=31 → effectiveKeep=0 →
+                // all downloaded files wiped on every refresh, causing "downloads disappear" symptom.
                 if (keepCount != null) {
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
                     val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
                     val trulyNew      = toDownload.count { it.pubDate > newestDate }
-                    val effectiveKeep = (keepCount - inFlight - trulyNew).coerceAtLeast(0)
+                    val effectiveKeep = if (inFlight >= keepCount) keepCount
+                                        else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
                     applyRetentionCleanup(allDownloaded, effectiveKeep)
                 }
                 // Step C — enqueue

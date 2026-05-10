@@ -1,9 +1,18 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.TimeZone
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
+
+val buildTime: String = SimpleDateFormat("yyyy-MM-dd HH:mm").let {
+    it.timeZone = TimeZone.getTimeZone("UTC")
+    it.format(Date())
+} + " UTC"
 
 android {
     namespace = "mobi.beyondpod.revival"
@@ -13,13 +22,12 @@ android {
         applicationId = "mobi.beyondpod.revival"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.2-beta"
+        versionCode = 3
+        versionName = "1.0.3-beta"
 
         // Build timestamp injected at compile time — shows in About screen so every
         // installed build is uniquely identifiable without needing a version bump.
-        buildConfigField("String", "BUILD_TIME",
-            "\"${java.time.Instant.now().toString().substring(0, 16).replace('T', ' ')} UTC\"")
+        buildConfigField("String", "BUILD_TIME", "\"$buildTime\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

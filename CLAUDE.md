@@ -31,7 +31,7 @@ Update this line at the start of each session to reflect where you are:
 - Phase 7: Import/Export + Settings
 - Phase 8: Widgets + Polish ✓ COMPLETE
 - Post-build: Real-device QA fixes ✓ COMPLETE
-- **Early Beta: pubDate parser fix confirmed on device (2026-05-10). All 277 Ask a Spaceman episodes now show correct dates + correct chronological order. Download-disappearing bug resolved as a consequence. Diagnostic logging cleaned up. Next: Tasks #8 (skip silence + volume boost), #10 (playlist nav), #11 (notification foundation).**
+- **Early Beta (v1.0.3-beta): Retention cleanup over-deletion bug fixed (2026-05-10). Root cause: effectiveKeep = keepCount - inFlight - trulyNew went negative when inFlight > keepCount, deleting ALL downloaded files on every refresh. Guard added: when inFlight ≥ keepCount, effectiveKeep = keepCount (no deletion). Applies to GLOBAL + DOWNLOAD_NEWEST strategies. Diagnostic DIAG logging added to both branches. Root cause of toDownload=0 confirmed: all episodes already DOWNLOADED/DELETED from prior auto-download cycles (correct behaviour). Next: Tasks #8 (skip silence + volume boost), #10 (playlist nav), #11 (notification foundation).**
 
 **Room DB version**: 5
 - Migration 1→2: compound indices (feedId+pubDate, feedId+playState, feedId+downloadState, queue snapshot position)
