@@ -5,11 +5,14 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
 import mobi.beyondpod.revival.data.local.entity.DownloadStateEnum
@@ -20,13 +23,82 @@ import mobi.beyondpod.revival.service.PlaybackStateHolder
 import java.io.File
 import javax.inject.Inject
 
+private const val TAG = "BP.Download"
+
 class DownloadRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val episodeDao: EpisodeDao,
     private val feedDao: FeedDao,
     private val downloadManager: DownloadManager,
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
+    private val okHttpClient: okhttp3.OkHttpClient
 ) : DownloadRepository {
+
+    /**
+     * Follow HTTP redirects via OkHttp and return the final resolved URL.
+     *
+     * Android's DownloadManager caps at 5 redirects. Many podcast feeds chain through
+     * multiple tracking proxies (podtrac, podsights, chartable, etc.) — a single episode
+     * URL can easily chain 5+ hops before reaching the actual MP3. Passing the raw RSS
+     * URL to DownloadManager causes ERROR_TOO_MANY_REDIRECTS while ExoPlayer (no cap)
+     * can stream the same URL without issue.
+     *
+     * OkHttpClient is configured with redirects enabled (default) and has no cap, so it
+     * resolves the chain and we hand DownloadManager the direct CDN URL.
+     * Falls back to the original URL on any network error.
+     */
+    /**
+     * Follow HTTP redirects via OkHttp and return the final resolved URL.
+     *
+     * Android's DownloadManager caps at 5 redirects. Many podcast feeds chain through
+     * multiple tracking proxies (podtrac, podsights, chartable, etc.) — a single episode
+     * URL can easily chain 5+ hops before reaching the actual MP3. Passing the raw RSS
+     * URL to DownloadManager causes ERROR_TOO_MANY_REDIRECTS while ExoPlayer (no cap)
+     * can stream the same URL without issue.
+     *
+     * Strategy:
+     *   1. Try HEAD — fast, no data transfer. Some tracking proxies block HEAD (403/405).
+     *   2. If HEAD returns 4xx/5xx, fall back to GET with Range: bytes=0-0 — nearly zero
+     *      data transferred, but tracking proxies that block HEAD allow GET. The response
+     *      body is immediately discarded. The final URL is read from response.request.url
+     *      after OkHttp has followed all redirects.
+     *   3. On any network error, return the original URL unchanged.
+     */
+    private suspend fun resolveRedirects(url: String): String = withContext(Dispatchers.IO) {
+        // 1. Try HEAD first
+        try {
+            val req = okhttp3.Request.Builder().url(url).head()
+                .addHeader("User-Agent", "BeyondPodRevival/5.0").build()
+            val resp = okHttpClient.newCall(req).execute()
+            val finalUrl = resp.request.url.toString()
+            val status = resp.code
+            resp.close()
+            if (status in 200..399) {
+                if (finalUrl != url) Log.d(TAG, "resolveRedirects HEAD: $url → $finalUrl")
+                return@withContext finalUrl
+            }
+            Log.d(TAG, "resolveRedirects: HEAD returned $status, falling back to GET range")
+        } catch (e: Exception) {
+            Log.d(TAG, "resolveRedirects: HEAD failed (${e.message}), falling back to GET range")
+        }
+
+        // 2. Fallback: GET with Range header — bytes=0-0 minimises transfer
+        //    Most tracking proxies (podtrac, podsights, chartable, etc.) allow GET.
+        try {
+            val req = okhttp3.Request.Builder().url(url)
+                .addHeader("User-Agent", "BeyondPodRevival/5.0")
+                .addHeader("Range", "bytes=0-0")
+                .build()
+            val resp = okHttpClient.newCall(req).execute()
+            resp.body?.close()                  // discard immediately — we only need the URL
+            val finalUrl = resp.request.url.toString()
+            if (finalUrl != url) Log.d(TAG, "resolveRedirects GET: $url → $finalUrl")
+            finalUrl
+        } catch (e: Exception) {
+            Log.w(TAG, "resolveRedirects: both HEAD and GET failed for $url — using original", e)
+            url
+        }
+    }
 
     /**
      * True when the active network has the WiFi/Ethernet transport (UNMETERED).
@@ -77,6 +149,42 @@ class DownloadRepositoryImpl @Inject constructor(
     }
 
     /**
+     * Reset any DOWNLOADING episodes that the Android DownloadManager no longer tracks.
+     *
+     * Episodes get stuck in DOWNLOADING when:
+     *   - The app was killed while a download was running (DownloadCompleteReceiver never fired)
+     *   - The user cleared the DownloadManager's history externally
+     *   - A previous app build failed to handle the completion broadcast
+     *
+     * Ghost rows block future downloads by consuming all available slots in countInFlightDownloads.
+     * This reconciliation runs before the slot calculation in autoDownloadNewEpisodes.
+     */
+    private suspend fun reconcileStalledDownloads(feedId: Long) {
+        val downloading = episodeDao.getDownloadingEpisodesForFeed(feedId)
+        if (downloading.isEmpty()) return
+        for (episode in downloading) {
+            val dmId = episode.downloadId ?: run {
+                // No downloadId — definitely ghost; reset immediately
+                Log.w(TAG, "reconcile: episode=${episode.id} '${episode.title}' in DOWNLOADING with no dmId — resetting")
+                episodeDao.updateDownloadState(episode.id, DownloadStateEnum.NOT_DOWNLOADED, null)
+                continue
+            }
+            val cursor = downloadManager.query(DownloadManager.Query().setFilterById(dmId))
+            val isActive = cursor.use { c ->
+                if (!c.moveToFirst()) return@use false
+                val statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                val status = c.getInt(statusCol)
+                status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING ||
+                status == DownloadManager.STATUS_PAUSED
+            }
+            if (!isActive) {
+                Log.w(TAG, "reconcile: episode=${episode.id} '${episode.title}' dmId=$dmId not active in DownloadManager — resetting to NOT_DOWNLOADED")
+                episodeDao.updateDownloadState(episode.id, DownloadStateEnum.NOT_DOWNLOADED, null)
+            }
+        }
+    }
+
+    /**
      * Delete files for episodes beyond the retention limit.
      * [allDownloaded] must be ordered newest-first (pubDate DESC).
      * Keeps the first [keepCount] episodes; soft-deletes the rest (file removed, state = DELETED).
@@ -113,11 +221,17 @@ class DownloadRepositoryImpl @Inject constructor(
     override suspend fun enqueueDownload(episodeId: Long) = enqueueDownload(episodeId, mobileAllowed = false)
 
     private suspend fun enqueueDownload(episodeId: Long, mobileAllowed: Boolean) {
-        val episode = episodeDao.getEpisodeById(episodeId) ?: return
+        val episode = episodeDao.getEpisodeById(episodeId) ?: run {
+            Log.w(TAG, "enqueue[$episodeId] — episode not found in DB, skipping")
+            return
+        }
 
         // Don't double-enqueue — if already in flight, leave DownloadManager to finish it.
         if (episode.downloadState == DownloadStateEnum.DOWNLOADING ||
-            episode.downloadState == DownloadStateEnum.QUEUED) return
+            episode.downloadState == DownloadStateEnum.QUEUED) {
+            Log.d(TAG, "enqueue[$episodeId] '${episode.title}' — already ${episode.downloadState}, skipping")
+            return
+        }
 
         // Enforce WiFi-only constraint. Skip entirely (do NOT enqueue) when:
         //   - WiFi-only is on (per-feed override → global) AND
@@ -127,7 +241,12 @@ class DownloadRepositoryImpl @Inject constructor(
         val feed = feedDao.getFeedById(episode.feedId)
         val wifiOnlyGlobal = dataStore.data.first()[AppSettings.DOWNLOAD_ON_WIFI_ONLY] ?: false
         val wifiOnly = feed?.downloadOnlyOnWifi ?: wifiOnlyGlobal
-        if (wifiOnly && !isOnWifi() && !mobileAllowed) return
+        val onWifi = isOnWifi()
+        Log.d(TAG, "enqueue[$episodeId] '${episode.title}' — wifiOnly=$wifiOnly onWifi=$onWifi mobileAllowed=$mobileAllowed")
+        if (wifiOnly && !onWifi && !mobileAllowed) {
+            Log.i(TAG, "enqueue[$episodeId] SKIPPED — WiFi-only policy active and not on WiFi")
+            return
+        }
 
         // Build destination path — fall back to internal storage if external unavailable.
         val safeTitle = episode.title.take(64).replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
@@ -147,7 +266,13 @@ class DownloadRepositoryImpl @Inject constructor(
         else
             DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
 
-        val request = DownloadManager.Request(Uri.parse(episode.url))
+        // Resolve redirect chain before handing to DownloadManager.
+        // DownloadManager caps at 5 redirects; podcast tracking URLs (podtrac, podsights,
+        // chartable, etc.) often chain 5+ hops. OkHttp follows all redirects and returns
+        // the final CDN URL, which DownloadManager can then fetch directly.
+        val resolvedUrl = resolveRedirects(episode.url)
+
+        val request = DownloadManager.Request(Uri.parse(resolvedUrl))
             .setTitle(episode.title)
             .setDescription("BeyondPod")
             .setMimeType(episode.mimeType.trim().ifEmpty { "audio/mpeg" })
@@ -160,16 +285,15 @@ class DownloadRepositoryImpl @Inject constructor(
         // (bad URI, bad MIME type, destination conflict). Without this, the failure is
         // swallowed by the coroutine handler and the episode is stuck NOT_DOWNLOADED
         // with no feedback. On failure: log + set FAILED so the retry button appears.
+        Log.i(TAG, "enqueue[$episodeId] → DownloadManager url=$resolvedUrl dest=${outputFile.absolutePath}")
         val dmId = try {
             downloadManager.enqueue(request)
         } catch (e: Exception) {
-            android.util.Log.e(
-                "DownloadRepo",
-                "DownloadManager.enqueue failed episode=$episodeId url=${episode.url}: ${e.message}", e
-            )
+            Log.e(TAG, "enqueue[$episodeId] FAILED — DownloadManager.enqueue threw: ${e.message}", e)
             episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
             return
         }
+        Log.i(TAG, "enqueue[$episodeId] SUCCESS — dmId=$dmId state→DOWNLOADING")
         episodeDao.updateDownloadIdAndState(episodeId, dmId, DownloadStateEnum.DOWNLOADING)
     }
 
@@ -235,19 +359,28 @@ class DownloadRepositoryImpl @Inject constructor(
      * isProtected episodes are NEVER deleted (rule #4, enforced by DAO query).
      */
     override suspend fun autoDownloadNewEpisodes(feedId: Long, isManualRefresh: Boolean, mobileAllowed: Boolean) {
-        val feed = feedDao.getFeedById(feedId) ?: return
+        val feed = feedDao.getFeedById(feedId) ?: run {
+            Log.w(TAG, "autoDownload feed=$feedId — feed not found, skipping")
+            return
+        }
+
+        // Reconcile ghost DOWNLOADING rows before counting in-flight slots.
+        // Episodes can get stuck in DOWNLOADING if DownloadCompleteReceiver never fired
+        // (e.g. app killed mid-download, DownloadManager row removed externally). Without
+        // this, those ghost rows permanently block future auto-downloads by consuming slots.
+        reconcileStalledDownloads(feedId)
+
         val effectiveStrategy = feed.downloadStrategy
         val keepCount = effectiveKeepCount(feed.maxEpisodesToKeep)
         val downloadCount = effectiveDownloadCount(feed.downloadCount)
-        // Manual refreshes bypass the per-cycle cap but are capped at keepCount so we never
-        // enqueue more episodes than the retention window allows.  Example: keepCount=5 →
-        // manual refresh downloads at most the 5 newest undownloaded episodes.
-        // Background scheduled runs respect the configured per-cycle downloadCount.
         val downloadLimit = when {
             isManualRefresh -> keepCount ?: Int.MAX_VALUE
             else            -> downloadCount
         }
-
+        val inFlightCheck = episodeDao.countInFlightDownloads(feedId)
+        val slots = (downloadLimit - inFlightCheck).coerceAtLeast(0)
+        Log.d(TAG, "autoDownload feed=$feedId '${feed.title}' strategy=$effectiveStrategy manual=$isManualRefresh " +
+            "keepCount=$keepCount downloadCount=$downloadCount downloadLimit=$downloadLimit inFlight=$inFlightCheck slots=$slots")
         // Step A — age-based cleanup (global setting; runs before count cleanup)
         val ageCutoffMs = effectiveDeleteOlderThanCutoffMs()
         if (ageCutoffMs != null) {
@@ -326,6 +459,7 @@ class DownloadRepositoryImpl @Inject constructor(
                 val toDownload = if (downloadCount > 0 && slots > 0)
                     episodeDao.getNotDownloadedNewest(feedId, slots)
                 else emptyList()
+                Log.d(TAG, "autoDownload GLOBAL feed=$feedId inFlight=$inFlight slots=$slots toDownload=${toDownload.size} downloadCount=$downloadCount")
 
                 // Step B — retention: only count truly new (newer than window) when shrinking threshold
                 if (keepCount != null) {

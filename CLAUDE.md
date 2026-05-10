@@ -31,7 +31,7 @@ Update this line at the start of each session to reflect where you are:
 - Phase 7: Import/Export + Settings
 - Phase 8: Widgets + Polish ✓ COMPLETE
 - Post-build: Real-device QA fixes ✓ COMPLETE
-- **Early Beta: full audit backlog complete (Groups 1–6 + post-audit Q12/foreground fixes). Ready for device QA.**
+- **Early Beta: pubDate parser fix confirmed on device (2026-05-10). All 277 Ask a Spaceman episodes now show correct dates + correct chronological order. Download-disappearing bug resolved as a consequence. Diagnostic logging cleaned up. Next: Tasks #8 (skip silence + volume boost), #10 (playlist nav), #11 (notification foundation).**
 
 **Room DB version**: 5
 - Migration 1→2: compound indices (feedId+pubDate, feedId+playState, feedId+downloadState, queue snapshot position)

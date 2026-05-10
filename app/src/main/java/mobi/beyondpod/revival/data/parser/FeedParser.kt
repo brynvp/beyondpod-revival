@@ -6,8 +6,14 @@ import org.xml.sax.helpers.DefaultHandler
 import java.io.InputStream
 import java.io.StringReader
 import java.text.SimpleDateFormat
+import android.util.Log
 import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
 import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoField
 import java.util.Locale
 import javax.inject.Inject
 import javax.xml.parsers.SAXParserFactory
@@ -31,27 +37,106 @@ class FeedParser @Inject constructor() {
         const val PODCAST_NS = "https://podcastindex.org/namespace/1.0"
         const val CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
 
-        // Date formatters (RFC 2822 variants)
-        private val RFC2822_FULL   = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.US)
-        private val RFC2822_NO_DAY = SimpleDateFormat("dd MMM yyyy HH:mm:ss Z", Locale.US)
-        private val RFC2822_NOTZ   = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss", Locale.US)
-        private val ISO_DATE       = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        private val DATE_FORMATS: List<SimpleDateFormat> =
-            listOf(RFC2822_FULL, RFC2822_NO_DAY, RFC2822_NOTZ, ISO_DATE)
+        // SimpleDateFormat fallback patterns — used only when RFC_1123_DATE_TIME fails.
+        // SimpleDateFormat is NOT thread-safe, so we use ThreadLocal to give each thread
+        // its own set of instances. RFC_1123_DATE_TIME (stateless) handles the vast majority
+        // of feeds; these fallbacks cover genuinely malformed or unusual date strings.
+        // Uppercase Z = numeric offset (+0000); lowercase z = named TZ ("GMT", "EST", etc.)
+        private val THREAD_LOCAL_FORMATS = ThreadLocal.withInitial {
+            listOf(
+                SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z",  Locale.US),
+                SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z",  Locale.US),
+                SimpleDateFormat("dd MMM yyyy HH:mm:ss Z",        Locale.US),
+                SimpleDateFormat("dd MMM yyyy HH:mm:ss z",        Locale.US),
+                SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss",     Locale.US),
+                SimpleDateFormat("yyyy-MM-dd",                     Locale.US)
+            )
+        }
+
+        // Covers RFC 2822 with colon-separated offset: "Thu, 01 May 2026 11:00:00 +00:00"
+        // RFC_1123_DATE_TIME uses +HHMM (no colon); this builder uses +HH:MM (with colon).
+        private val RFC2822_COLON_OFFSET: DateTimeFormatter = DateTimeFormatterBuilder()
+            .parseCaseInsensitive()
+            .parseLenient()
+            .optionalStart().appendText(ChronoField.DAY_OF_WEEK,
+                mapOf(1L to "Mon", 2L to "Tue", 3L to "Wed", 4L to "Thu",
+                      5L to "Fri", 6L to "Sat", 7L to "Sun"))
+            .appendLiteral(", ").optionalEnd()
+            .appendValue(ChronoField.DAY_OF_MONTH, 1, 2, java.time.format.SignStyle.NOT_NEGATIVE)
+            .appendLiteral(' ')
+            .appendText(ChronoField.MONTH_OF_YEAR,
+                mapOf(1L to "Jan", 2L to "Feb", 3L to "Mar", 4L to "Apr",
+                      5L to "May", 6L to "Jun", 7L to "Jul", 8L to "Aug",
+                      9L to "Sep", 10L to "Oct", 11L to "Nov", 12L to "Dec"))
+            .appendLiteral(' ')
+            .appendValue(ChronoField.YEAR, 4)
+            .appendLiteral(' ')
+            .appendValue(ChronoField.HOUR_OF_DAY, 2)
+            .appendLiteral(':').appendValue(ChronoField.MINUTE_OF_HOUR, 2)
+            .optionalStart().appendLiteral(':').appendValue(ChronoField.SECOND_OF_MINUTE, 2).optionalEnd()
+            .appendLiteral(' ')
+            .appendOffsetId()          // accepts +00:00, +05:30, Z, etc.
+            .toFormatter()
+            .withResolverStyle(java.time.format.ResolverStyle.LENIENT)
+            .withChronology(java.time.chrono.IsoChronology.INSTANCE)
+
+        private const val DATE_TAG = "BP.FeedParser"
 
         fun parseDate(raw: String): Long {
             if (raw.isBlank()) return 0L
-            if (raw.contains('T')) {
+            val trimmed = raw.trim()
+            Log.d(DATE_TAG, "parseDate IN: '$trimmed'")
+
+            // 1. ISO 8601 / Atom — starts with a numeric year digit AND contains 'T' separator.
+            // IMPORTANT: Day-of-week abbreviations "Tue" and "Thu" also contain uppercase 'T'
+            // but are RFC 1123 dates, not ISO 8601. ISO 8601 always starts with a digit (the year);
+            // RFC 1123 always starts with a letter (the day abbreviation). Without the isDigit()
+            // guard, every Tuesday and Thursday episode was trapped here, both Instant.parse()
+            // calls failed, and 0L was returned — RFC_1123_DATE_TIME was never reached.
+            if (trimmed.isNotEmpty() && trimmed[0].isDigit() && trimmed.contains('T')) {
                 return try {
-                    Instant.parse(raw.trim()).toEpochMilli()
+                    Instant.parse(trimmed).toEpochMilli()
                 } catch (_: DateTimeParseException) {
-                    try { Instant.parse(raw.trim().replace(" ", "T")).toEpochMilli() }
-                    catch (_: Exception) { 0L }
+                    try { Instant.parse(trimmed.replace(" ", "T")).toEpochMilli() }
+                    catch (e: Exception) {
+                        // Previously silent — now logged so we can catch feeds with 'T' in a
+                        // non-ISO date string that was silently returning 0L without a FAILED log.
+                        Log.w(DATE_TAG, "parseDate: ISO8601 FAILED for '$trimmed': ${e.message}")
+                        0L
+                    }
                 }
             }
-            for (fmt in DATE_FORMATS) {
-                try { return fmt.parse(raw.trim())?.time ?: continue } catch (_: Exception) {}
+
+            // 2. RFC 1123 / 2822 — handles "GMT", +HHMM (no colon), optional day-of-week.
+            try {
+                return DateTimeFormatter.RFC_1123_DATE_TIME
+                    .parse(trimmed, ZonedDateTime::from)
+                    .toInstant().toEpochMilli()
+            } catch (_: Exception) {}
+
+            // 3. RFC 2822 with colon-separated offset (+00:00 / +05:30 / Z).
+            //    Some modern RSS generators emit ISO 8601 offsets instead of RFC 2822 +HHMM.
+            try {
+                return RFC2822_COLON_OFFSET.parse(trimmed, OffsetDateTime::from)
+                    .toInstant().toEpochMilli()
+            } catch (_: Exception) {}
+
+            // 4. SimpleDateFormat fallbacks — thread-local, safe under concurrent refresh
+            val fmts = THREAD_LOCAL_FORMATS.get()!!
+            for (fmt in fmts) {
+                try { return fmt.parse(trimmed)?.time ?: continue } catch (_: Exception) {}
             }
+
+            // 5. Last resort — replace named TZ with numeric offset and retry
+            val normalized = trimmed.replace(Regex("\\s+(GMT|UTC|UT)\\s*$"), " +0000")
+            if (normalized != trimmed) {
+                for (fmt in fmts) {
+                    try { return fmt.parse(normalized)?.time ?: continue } catch (_: Exception) {}
+                }
+            }
+
+            // All parsers failed — log the raw string so we can see the exact format in logcat.
+            Log.w(DATE_TAG, "parseDate: FAILED for '$trimmed' — add format to FeedParser")
             return 0L
         }
 

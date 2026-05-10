@@ -89,7 +89,7 @@ class MyEpisodesViewModel @Inject constructor(
             _isRefreshing.value = true
             workManager.enqueueUniqueWork(
                 "manual_refresh_all",
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.KEEP,
                 OneTimeWorkRequestBuilder<FeedUpdateWorker>()
                     .setInputData(workDataOf(
                         FeedUpdateWorker.KEY_FEED_ID  to FeedUpdateWorker.ALL_FEEDS,

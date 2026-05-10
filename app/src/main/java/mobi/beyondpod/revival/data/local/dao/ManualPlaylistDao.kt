@@ -28,4 +28,12 @@ interface ManualPlaylistDao {
 
     @Query("SELECT COUNT(*) FROM manual_playlist_episodes WHERE playlistId = :playlistId AND episodeId = :episodeId")
     suspend fun containsEpisode(playlistId: Long, episodeId: Long): Int
+
+    /**
+     * Remove all cross-refs for a set of episode IDs.
+     * Called during feed deletion so My Episodes doesn't retain orphaned references
+     * to episodes whose rows were CASCADE-deleted with their feed.
+     */
+    @Query("DELETE FROM manual_playlist_episodes WHERE episodeId IN (:episodeIds)")
+    suspend fun removeEpisodes(episodeIds: List<Long>)
 }

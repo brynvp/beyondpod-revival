@@ -5,6 +5,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +19,7 @@ import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.settings.AppSettings
 import mobi.beyondpod.revival.domain.usecase.feed.ExportOpmlUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.ImportOpmlUseCase
+import mobi.beyondpod.revival.service.FeedUpdateWorker
 import org.json.JSONObject
 import javax.inject.Inject
 
@@ -32,7 +37,8 @@ data class BackupUiState(
 class BackupViewModel @Inject constructor(
     private val importOpmlUseCase: ImportOpmlUseCase,
     private val exportOpmlUseCase: ExportOpmlUseCase,
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
+    private val workManager: WorkManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BackupUiState())
@@ -64,6 +70,22 @@ class BackupViewModel @Inject constructor(
             importOpmlUseCase(content).fold(
                 onSuccess = { count ->
                     _uiState.update { it.copy(isLoading = false, message = "Imported $count feeds") }
+                    if (count > 0) {
+                        // Kick off an ALL_FEEDS refresh so imported feeds get their episodes,
+                        // artwork, and auto-downloads populated immediately — not waiting for the
+                        // next periodic sync which could be hours away.
+                        val request = OneTimeWorkRequestBuilder<FeedUpdateWorker>()
+                            .setInputData(workDataOf(
+                                FeedUpdateWorker.KEY_FEED_ID  to FeedUpdateWorker.ALL_FEEDS,
+                                FeedUpdateWorker.KEY_IS_MANUAL to true
+                            ))
+                            .build()
+                        workManager.enqueueUniqueWork(
+                            "opml_import_refresh",
+                            ExistingWorkPolicy.REPLACE,
+                            request
+                        )
+                    }
                 },
                 onFailure = { e ->
                     _uiState.update { it.copy(isLoading = false, message = "Import failed: ${e.message}") }

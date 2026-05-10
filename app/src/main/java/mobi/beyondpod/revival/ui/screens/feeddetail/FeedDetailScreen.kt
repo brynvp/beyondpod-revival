@@ -176,7 +176,10 @@ fun FeedDetailScreen(
                                         )
                                         navController.navigate(Screen.FullPlayer.route)
                                     },
-                                    onDownloadClick = viewModel::downloadEpisode
+                                    onDownloadClick  = viewModel::downloadEpisode,
+                                    onDeleteClick    = viewModel::deleteEpisodeDownload,
+                                    onShareClick     = viewModel::shareEpisode,
+                                    onFavouriteClick = viewModel::toggleFavourite
                                 )
                             }
                             1 -> SettingsTab(feed = state.feed, viewModel = viewModel)
@@ -294,7 +297,10 @@ fun FeedDetailScreen(
 private fun EpisodesTab(
     state: FeedDetailUiState.Success,
     onEpisodeClick: (Long) -> Unit,
-    onDownloadClick: (Long) -> Unit
+    onDownloadClick: (Long) -> Unit,
+    onDeleteClick: (Long) -> Unit,
+    onShareClick: (Long) -> Unit,
+    onFavouriteClick: (Long) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         // Feed header
@@ -317,12 +323,15 @@ private fun EpisodesTab(
         } else {
             items(items = state.episodes, key = { it.id }) { episode ->
                 EpisodeListItem(
-                    episode = episode,
-                    onClick = { onEpisodeClick(episode.id) },
-                    onDownloadClick = { onDownloadClick(episode.id) },
-                    feedImageUrl = state.feed.imageUrl,
-                    feedTitle = state.feed.title,
-                    modifier = Modifier
+                    episode        = episode,
+                    onClick        = { onEpisodeClick(episode.id) },
+                    onDownloadClick  = { onDownloadClick(episode.id) },
+                    onDeleteClick    = { onDeleteClick(episode.id) },
+                    onShareClick     = { onShareClick(episode.id) },
+                    onFavouriteClick = { onFavouriteClick(episode.id) },
+                    feedImageUrl   = state.feed.imageUrl,
+                    feedTitle      = state.feed.title,
+                    modifier       = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp)
                 )

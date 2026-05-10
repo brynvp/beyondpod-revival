@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import mobi.beyondpod.revival.data.local.dao.CategoryDao
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
+import mobi.beyondpod.revival.data.local.dao.ManualPlaylistDao
 import mobi.beyondpod.revival.data.local.dao.SmartPlaylistDao
 import mobi.beyondpod.revival.service.PlaybackService
 import mobi.beyondpod.revival.service.PlaybackStateHolder
@@ -31,9 +32,24 @@ import mobi.beyondpod.revival.data.local.entity.SmartPlaylistRule
 import mobi.beyondpod.revival.data.parser.FeedParser
 import mobi.beyondpod.revival.data.parser.ParsedEpisode
 import mobi.beyondpod.revival.data.parser.ParsedFeed
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import java.util.concurrent.ConcurrentHashMap
 import okhttp3.Request
 import javax.inject.Inject
+
+/**
+ * Per-feed mutex map. Keyed by feed ID — ensures only one refresh (WorkManager worker,
+ * ViewModel, or any other caller) processes a given feed at a time. Using ConcurrentHashMap
+ * so concurrent getOrPut calls from different coroutines are safe.
+ *
+ * Stored at class level (not companion) because FeedRepositoryImpl is a @Singleton — one
+ * instance for the process lifetime, so the map is effectively process-scoped.
+ */
+private val feedRefreshLocks = ConcurrentHashMap<Long, Mutex>()
 
 class FeedRepositoryImpl @Inject constructor(
     private val feedDao: FeedDao,
@@ -43,6 +59,7 @@ class FeedRepositoryImpl @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val feedParser: FeedParser,
     private val smartPlaylistDao: SmartPlaylistDao,
+    private val manualPlaylistDao: ManualPlaylistDao,
     private val gson: Gson,
     private val downloadManager: DownloadManager,
     @ApplicationContext private val context: Context
@@ -56,28 +73,39 @@ class FeedRepositoryImpl @Inject constructor(
     override suspend fun getFeedById(id: Long): FeedEntity? = feedDao.getFeedById(id)
 
     override suspend fun subscribeToFeed(url: String): Result<FeedEntity> = runCatching {
-        val existing = feedDao.getFeedByUrl(url)
-        if (existing != null) return@runCatching existing
+        // Check the original URL first (fast path — no network required).
+        feedDao.getFeedByUrl(url)?.let { return@runCatching it }
 
         // G4: Reject HTML pages before doing a full RSS parse.
         // HEAD is cheap — no body download. If the server doesn't support HEAD (returns 4xx/5xx),
         // we skip the content-type check and let fetchAndParse fail naturally with a parse error.
         validateFeedContentType(url).getOrElse { e -> throw e }
 
-        val parsed = fetchAndParse(url).getOrNull()?.first
+        val (parsed, finalUrl) = fetchAndParse(url).getOrThrow()
+
+        // Check the redirect-resolved URL. Podcast feeds commonly redirect from a tracking
+        // domain (podtrac, feedburner, etc.) to the canonical host. After the first refresh,
+        // the stored URL is updated to finalUrl. Re-subscribing with the original URL would
+        // not match the stored finalUrl → duplicate feed row. Checking here prevents that.
+        if (finalUrl != url) {
+            feedDao.getFeedByUrl(finalUrl)?.let { return@runCatching it }
+        }
+
+        // Store finalUrl (not the original) so future re-subscribes via the original URL
+        // are caught by the finalUrl check above — no duplicate feed created.
         val placeholder = FeedEntity(
-            url          = url,
-            title        = parsed?.title?.ifEmpty { url } ?: url,
-            description  = parsed?.description ?: "",
-            imageUrl     = parsed?.imageUrl,
-            author       = parsed?.author ?: "",
-            website      = parsed?.website ?: "",
-            language     = parsed?.language ?: "",
+            url          = finalUrl,
+            title        = parsed.title.ifEmpty { url },
+            description  = parsed.description,
+            imageUrl     = parsed.imageUrl,
+            author       = parsed.author,
+            website      = parsed.website,
+            language     = parsed.language,
             lastUpdated  = System.currentTimeMillis()
         )
         val id = feedDao.upsertFeed(placeholder)
         val feed = feedDao.getFeedById(id) ?: placeholder.copy(id = id)
-        parsed?.episodes?.forEach { episodeRepository.upsertEpisode(it.toEntity(feed.id)) }
+        parsed.episodes.forEach { episodeRepository.upsertEpisode(it.toEntity(feed.id)) }
         feed
     }
 
@@ -115,9 +143,23 @@ class FeedRepositoryImpl @Inject constructor(
             if (dmIds.isNotEmpty()) downloadManager.remove(*dmIds)
         }
 
+        // Pre-fetch all episodes for this feed before the CASCADE wipes the rows.
+        // Used for both My Episodes cleanup and local file deletion below.
+        val feedEpisodes = episodeDao.getEpisodesForFeedList(id)
+
+        // Clean up manual playlist (My Episodes) cross-refs for this feed's episodes.
+        // ManualPlaylistEpisodeCrossRef has no FK on episodeId (intentional — other tables
+        // like QueueSnapshotItemEntity also omit the FK for resilience). Without this call,
+        // unsubscribing leaves orphaned rows in manual_playlist_episodes pointing at
+        // episode IDs that no longer exist, corrupting My Episodes order and item count.
+        val episodeIds = feedEpisodes.map { it.id }
+        if (episodeIds.isNotEmpty()) {
+            manualPlaylistDao.removeEpisodes(episodeIds)
+        }
+
         // Delete local files on-disk
         if (deleteDownloads) {
-            episodeDao.getEpisodesForFeedList(id).forEach { ep ->
+            feedEpisodes.forEach { ep ->
                 ep.localFilePath?.let { java.io.File(it).delete() }
             }
         }
@@ -179,6 +221,15 @@ class FeedRepositoryImpl @Inject constructor(
      * On redirect (301/302), persists the final URL so subsequent refreshes don't re-chase it.
      */
     override suspend fun refreshFeed(id: Long, markFailure: Boolean): Result<Unit> {
+        // Per-feed mutex: only one refresh runs at a time for a given feed.
+        // Guards against concurrent execution from WorkManager periodic job + manual pull-to-refresh.
+        // Without this, two concurrent refreshes of the same feed cause archiveRemovedEpisodes
+        // to mark valid episodes as archived and upsertEpisode races to create duplicate rows.
+        val lock = feedRefreshLocks.getOrPut(id) { Mutex() }
+        return lock.withLock { refreshFeedLocked(id, markFailure) }
+    }
+
+    private suspend fun refreshFeedLocked(id: Long, markFailure: Boolean): Result<Unit> {
         val feed = feedDao.getFeedById(id) ?: return Result.success(Unit)
         val fetchResult = fetchAndParse(feed.url)
 
@@ -423,17 +474,23 @@ class FeedRepositoryImpl @Inject constructor(
      * If the server doesn't support HEAD (returns 4xx/5xx), the check is skipped gracefully
      * — [fetchAndParse] will handle the error on the subsequent GET.
      */
-    private fun validateFeedContentType(url: String): Result<Unit> = runCatching {
-        val headReq = Request.Builder().url(url)
-            .head()
-            .header("User-Agent", "BeyondPodRevival/5.0")
-            .build()
-        okHttpClient.newCall(headReq).execute().use { resp ->
-            // Only act on definitive 2xx responses — let non-2xx fall through to fetchAndParse
-            if (!resp.isSuccessful) return@runCatching
-            val contentType = resp.header("Content-Type") ?: return@runCatching
-            check(!contentType.contains("text/html", ignoreCase = true)) {
-                "URL appears to be a website, not a podcast feed. Please check the RSS/Atom feed URL."
+    /**
+     * Must be called from a coroutine — dispatches to Dispatchers.IO so the blocking
+     * OkHttp execute() call never runs on the main thread.
+     */
+    private suspend fun validateFeedContentType(url: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val headReq = Request.Builder().url(url)
+                .head()
+                .header("User-Agent", "BeyondPodRevival/5.0")
+                .build()
+            okHttpClient.newCall(headReq).execute().use { resp ->
+                // Only act on definitive 2xx responses — let non-2xx fall through to fetchAndParse
+                if (!resp.isSuccessful) return@runCatching
+                val contentType = resp.header("Content-Type") ?: return@runCatching
+                check(!contentType.contains("text/html", ignoreCase = true)) {
+                    "URL appears to be a website, not a podcast feed. Please check the RSS/Atom feed URL."
+                }
             }
         }
     }
@@ -441,13 +498,16 @@ class FeedRepositoryImpl @Inject constructor(
     /**
      * Fetch and parse the RSS at [url]. Returns (ParsedFeed, finalUrl) where finalUrl is the
      * URL OkHttp actually landed on after any 301/302 redirects — may differ from [url].
+     * Dispatches to Dispatchers.IO — safe to call from any coroutine context.
      */
-    private fun fetchAndParse(url: String): Result<Pair<ParsedFeed, String>> = runCatching {
-        val req = Request.Builder().url(url).header("User-Agent", "BeyondPodRevival/5.0").build()
-        okHttpClient.newCall(req).execute().use { resp ->
-            check(resp.isSuccessful) { "HTTP ${resp.code} for $url" }
-            val parsed = feedParser.parse(resp.body?.byteStream() ?: error("Empty response body"))
-            Pair(parsed, resp.request.url.toString())
+    private suspend fun fetchAndParse(url: String): Result<Pair<ParsedFeed, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder().url(url).header("User-Agent", "BeyondPodRevival/5.0").build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                check(resp.isSuccessful) { "HTTP ${resp.code} for $url" }
+                val parsed = feedParser.parse(resp.body?.byteStream() ?: error("Empty response body"))
+                Pair(parsed, resp.request.url.toString())
+            }
         }
     }
 

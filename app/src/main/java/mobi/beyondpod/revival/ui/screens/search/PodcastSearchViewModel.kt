@@ -44,6 +44,10 @@ class PodcastSearchViewModel @Inject constructor(
     private val _subscribedUrls = MutableStateFlow<Set<String>>(emptySet())
     val subscribedUrls: StateFlow<Set<String>> = _subscribedUrls
 
+    /** feedUrls where a subscribe coroutine is currently in-flight — disables the button. */
+    private val _subscribingUrls = MutableStateFlow<Set<String>>(emptySet())
+    val subscribingUrls: StateFlow<Set<String>> = _subscribingUrls
+
     fun onQueryChange(value: String) {
         query = value
     }
@@ -69,13 +73,20 @@ class PodcastSearchViewModel @Inject constructor(
     }
 
     fun subscribe(feedUrl: String) {
+        // Guard: ignore taps while this URL is already being subscribed.
+        if (feedUrl in _subscribingUrls.value || feedUrl in _subscribedUrls.value) return
         viewModelScope.launch {
-            subscribeToFeedUseCase(feedUrl)
-                .onSuccess { feed ->
-                    _subscribedUrls.value = _subscribedUrls.value + feedUrl
-                    enqueueImmediateRefresh(feed.id)
-                }
+            _subscribingUrls.value = _subscribingUrls.value + feedUrl
+            try {
+                subscribeToFeedUseCase(feedUrl)
+                    .onSuccess { feed ->
+                        _subscribedUrls.value = _subscribedUrls.value + feedUrl
+                        enqueueImmediateRefresh(feed.id)
+                    }
                 // silently ignore duplicate-subscribe (subscribeToFeed returns existing record)
+            } finally {
+                _subscribingUrls.value = _subscribingUrls.value - feedUrl
+            }
         }
     }
 

@@ -16,15 +16,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -42,6 +53,7 @@ import mobi.beyondpod.revival.ui.theme.EpisodeNew
 import mobi.beyondpod.revival.ui.theme.EpisodePlayed
 import mobi.beyondpod.revival.ui.theme.EpisodeStarred
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -61,6 +73,9 @@ fun EpisodeListItem(
     episode: EpisodeEntity,
     onClick: () -> Unit,
     onDownloadClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
+    onShareClick: (() -> Unit)? = null,
+    onFavouriteClick: (() -> Unit)? = null,
     feedImageUrl: String? = null,
     feedTitle: String? = null,
     modifier: Modifier = Modifier
@@ -197,18 +212,22 @@ fun EpisodeListItem(
             }
         }
 
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(4.dp))
 
-        // State icons (right side)
+        // Right-side action column: download state icon + three-dot menu
         Column(horizontalAlignment = Alignment.End) {
+
+            // Favourite heart (replaces the old Star icon — shows only when starred)
             if (episode.isStarred) {
                 Icon(
-                    imageVector = Icons.Default.Star,
-                    contentDescription = "Starred",
-                    tint = EpisodeStarred,
-                    modifier = Modifier.size(16.dp)
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = "Favourite",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(14.dp)
                 )
             }
+
+            // Download state icon / button
             when (episode.downloadState) {
                 DownloadStateEnum.DOWNLOADED -> Icon(
                     imageVector = Icons.Default.CheckCircle,
@@ -224,28 +243,102 @@ fun EpisodeListItem(
                     modifier = Modifier.size(24.dp)
                 )
                 DownloadStateEnum.FAILED -> {
-                    // Tappable warning — lets user retry a failed download.
                     if (onDownloadClick != null) {
-                        IconButton(onClick = onDownloadClick) {
+                        IconButton(onClick = onDownloadClick, modifier = Modifier.size(36.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Warning,
                                 contentDescription = "Download failed — tap to retry",
                                 tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
                 }
                 else -> {
                     if (onDownloadClick != null) {
-                        // Full 48dp touch target per Material guidelines — don't constrain to
-                        // smaller sizes or misses will fire the parent row's onClick (playback).
-                        IconButton(onClick = onDownloadClick) {
+                        IconButton(onClick = onDownloadClick, modifier = Modifier.size(40.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = "Download episode",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Three-dot overflow menu: Delete / Share / Favourite
+            // Only shown when at least one action callback is provided.
+            if (onDeleteClick != null || onShareClick != null || onFavouriteClick != null) {
+                var menuExpanded by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More options",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        // Delete — only relevant when a file is downloaded
+                        if (onDeleteClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("Delete download") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                enabled = episode.downloadState == DownloadStateEnum.DOWNLOADED,
+                                onClick = {
+                                    menuExpanded = false
+                                    onDeleteClick()
+                                }
+                            )
+                        }
+                        // Favourite toggle
+                        if (onFavouriteClick != null) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(if (episode.isStarred) "Remove favourite" else "Add favourite")
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (episode.isStarred)
+                                            Icons.Default.Favorite
+                                        else
+                                            Icons.Default.FavoriteBorder,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onFavouriteClick()
+                                }
+                            )
+                        }
+                        // Share — stub
+                        if (onShareClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("Share") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Share, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onShareClick()
+                                }
                             )
                         }
                     }
@@ -253,15 +346,23 @@ fun EpisodeListItem(
             }
         }
 
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(4.dp))
     }
 }
 
-private val EPISODE_DATE_FMT = SimpleDateFormat("MMM d", Locale.getDefault())
+private val EPISODE_DATE_FMT_SAME_YEAR = SimpleDateFormat("MMM d",      Locale.getDefault())
+private val EPISODE_DATE_FMT_PAST_YEAR = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
 
 private fun formatDate(epochMs: Long): String {
     if (epochMs == 0L) return ""
-    return EPISODE_DATE_FMT.format(Date(epochMs))
+    val date = Date(epochMs)
+    val currentYear = Calendar.getInstance().get(Calendar.YEAR)
+    val epCal = Calendar.getInstance().apply { time = date }
+    return if (epCal.get(Calendar.YEAR) == currentYear) {
+        EPISODE_DATE_FMT_SAME_YEAR.format(date)
+    } else {
+        EPISODE_DATE_FMT_PAST_YEAR.format(date)
+    }
 }
 
 private fun formatDuration(ms: Long): String {

@@ -52,8 +52,9 @@ fun PodcastSearchScreen(
     navController: NavController,
     viewModel: PodcastSearchViewModel = hiltViewModel()
 ) {
-    val uiState       by viewModel.uiState.collectAsState()
-    val subscribedUrls by viewModel.subscribedUrls.collectAsState()
+    val uiState        by viewModel.uiState.collectAsState()
+    val subscribedUrls  by viewModel.subscribedUrls.collectAsState()
+    val subscribingUrls by viewModel.subscribingUrls.collectAsState()
     val keyboard       = LocalSoftwareKeyboardController.current
 
     fun doSearch() {
@@ -126,9 +127,10 @@ fun PodcastSearchScreen(
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(items = state.items, key = { it.feedUrl }) { result ->
                             SearchResultRow(
-                                result       = result,
-                                isSubscribed = result.feedUrl in subscribedUrls,
-                                onSubscribe  = { viewModel.subscribe(result.feedUrl) }
+                                result        = result,
+                                isSubscribed  = result.feedUrl in subscribedUrls,
+                                isSubscribing = result.feedUrl in subscribingUrls,
+                                onSubscribe   = { viewModel.subscribe(result.feedUrl) }
                             )
                             HorizontalDivider(
                                 modifier  = Modifier.padding(start = 76.dp),
@@ -146,6 +148,7 @@ fun PodcastSearchScreen(
 private fun SearchResultRow(
     result: PodcastSearchResult,
     isSubscribed: Boolean,
+    isSubscribing: Boolean,
     onSubscribe: () -> Unit
 ) {
     Row(
@@ -196,6 +199,10 @@ private fun SearchResultRow(
         if (isSubscribed) {
             OutlinedButton(onClick = {}, enabled = false) {
                 Text("Subscribed")
+            }
+        } else if (isSubscribing) {
+            OutlinedButton(onClick = {}, enabled = false) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             }
         } else {
             Button(onClick = onSubscribe) {

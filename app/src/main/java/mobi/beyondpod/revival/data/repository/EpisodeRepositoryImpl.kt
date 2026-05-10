@@ -231,14 +231,18 @@ class EpisodeRepositoryImpl @Inject constructor(
         if (episode.guid.isNotBlank() && episode.guid != episode.url) {
             val byGuid = episodeDao.getEpisodeByGuid(episode.guid, episode.feedId)
             if (byGuid != null) {
-                return episodeDao.upsertEpisode(mergeWithExisting(episode, byGuid))
+                // @Upsert returns -1 for UPDATEs — return the known existing ID instead so that
+                // the caller's archiveRemovedEpisodes list is never poisoned with -1 values.
+                episodeDao.upsertEpisode(mergeWithExisting(episode, byGuid))
+                return byGuid.id
             }
         }
 
         // Priority 2 — URL
         val byUrl = episodeDao.getEpisodeByUrl(episode.url, episode.feedId)
         if (byUrl != null) {
-            return episodeDao.upsertEpisode(mergeWithExisting(episode, byUrl))
+            episodeDao.upsertEpisode(mergeWithExisting(episode, byUrl))
+            return byUrl.id
         }
 
         // Priority 3 — Title + Duration heuristic
@@ -247,11 +251,12 @@ class EpisodeRepositoryImpl @Inject constructor(
                 episode.feedId, episode.title, episode.duration
             )
             if (duplicates.isNotEmpty()) {
-                return episodeDao.upsertEpisode(mergeWithExisting(episode, duplicates.first()))
+                episodeDao.upsertEpisode(mergeWithExisting(episode, duplicates.first()))
+                return duplicates.first().id
             }
         }
 
-        // Priority 4 — New episode (no existing record — insert as-is)
+        // Priority 4 — New episode (no existing record — @Upsert INSERT returns the real row ID)
         return episodeDao.upsertEpisode(episode)
     }
 

@@ -1,13 +1,20 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup rules for API < 31.
+    The Room database is excluded from cloud backup. Episode state, download progress,
+    and subscriptions are either re-fetched from RSS on first launch or will be handled
+    by gPodder sync in a future release. Backing up and restoring the DB causes stale
+    download states (DOWNLOADING/DOWNLOADED) to reappear after "Clear Data", which is
+    confusing and hard to debug.
+    DataStore preferences (settings) ARE backed up — those are safe to restore.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- Exclude Room DB + WAL/SHM journal files -->
+    <exclude domain="database" path="beyondpod.db"/>
+    <exclude domain="database" path="beyondpod.db-shm"/>
+    <exclude domain="database" path="beyondpod.db-wal"/>
+    <!-- Exclude WorkManager's internal DB so stale job queues aren't restored -->
+    <exclude domain="database" path="workdb"/>
+    <exclude domain="database" path="workdb-shm"/>
+    <exclude domain="database" path="workdb-wal"/>
 </full-backup-content>

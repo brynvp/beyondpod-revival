@@ -184,22 +184,30 @@ interface EpisodeDao {
     // Returns ALL downloaded non-protected episodes (played and unplayed), newest first.
     // Used for retention cleanup — keep the newest N, delete the rest.
     // isProtected = 0 enforced here; absolute veto rule #4 applies.
+    //
+    // Secondary sort: id ASC breaks ties when pubDate is equal (including when all = 0).
+    // RSS feeds list newest episodes first, so lower row IDs = newer episodes. This ensures
+    // retention always keeps the newest RSS episodes when pubDates are missing/corrupt.
     @Query("""
         SELECT * FROM episodes
         WHERE feedId = :feedId
         AND downloadState = 'DOWNLOADED'
         AND isProtected = 0
-        ORDER BY pubDate DESC
+        ORDER BY pubDate DESC, id ASC
     """)
     suspend fun getAllDownloadedNonProtected(feedId: Long): List<EpisodeEntity>
 
     // Downloaded non-protected episodes older than [cutoffMs] epoch — for age-based cleanup.
     // cutoffMs = System.currentTimeMillis() - (days * 86_400_000L)
+    // NOTE: episodes with pubDate=0 (missing date) satisfy pubDate < cutoffMs — they will be
+    // incorrectly included here if age cleanup is enabled. This is correct only after the date
+    // parser is fixed; with the fix deployed, pubDate=0 should never occur on a valid episode.
     @Query("""
         SELECT * FROM episodes
         WHERE feedId = :feedId
         AND downloadState = 'DOWNLOADED'
         AND isProtected = 0
+        AND pubDate > 0
         AND pubDate < :cutoffMs
         ORDER BY pubDate ASC
     """)
@@ -213,19 +221,23 @@ interface EpisodeDao {
     """)
     suspend fun countInFlightDownloads(feedId: Long): Int
 
-    // Episodes available for auto-download (not yet downloaded), newest first
+    // Episodes available for auto-download (not yet downloaded), newest first.
+    // Excludes archived episodes — they're no longer in the RSS and should not be auto-downloaded.
+    // Secondary sort: id ASC breaks pubDate ties — lower id = parsed earlier in RSS = newer episode.
     @Query("""
         SELECT * FROM episodes
-        WHERE feedId = :feedId AND downloadState = 'NOT_DOWNLOADED'
-        ORDER BY pubDate DESC LIMIT :count
+        WHERE feedId = :feedId AND downloadState = 'NOT_DOWNLOADED' AND isArchived = 0
+        ORDER BY pubDate DESC, id ASC LIMIT :count
     """)
     suspend fun getNotDownloadedNewest(feedId: Long, count: Int): List<EpisodeEntity>
 
-    // Episodes available for auto-download in serial order, oldest first
+    // Episodes available for auto-download in serial order, oldest first.
+    // Excludes archived episodes — they're no longer in the RSS and should not be auto-downloaded.
+    // Secondary sort: id DESC breaks pubDate ties — higher id = parsed later in RSS = older episode.
     @Query("""
         SELECT * FROM episodes
-        WHERE feedId = :feedId AND downloadState = 'NOT_DOWNLOADED'
-        ORDER BY pubDate ASC LIMIT :count
+        WHERE feedId = :feedId AND downloadState = 'NOT_DOWNLOADED' AND isArchived = 0
+        ORDER BY pubDate ASC, id DESC LIMIT :count
     """)
     suspend fun getNotDownloadedOldest(feedId: Long, count: Int): List<EpisodeEntity>
 

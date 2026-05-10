@@ -51,10 +51,44 @@ This document tracks the resolution of critical architectural and stability risk
 
 ---
 
-## 🔍 Observations — Accepted / Won't Fix
+## ✅ Fixed 2026-05-09 (Post Red-Team Audit)
+
+### 11. Date Parsing Failure — Libsyn GMT timezone [E1]
+- **Status:** **FIXED.**
+- **Root cause (corrected from audit):** DB analysis showed 273/277 "Ask a Spaceman" episodes with `pubDate=0` on a fresh DB. All failing episodes were published 2018+; all 4 working episodes were from 2015–2017. Pattern is by year, not day-digit count. Libsyn changed their RSS date format from numeric `+0000` to named `GMT` around 2018. `SimpleDateFormat("...Z")` only accepts numeric offsets — `GMT` silently returns null.
+- **Fix:** `DateTimeFormatter.RFC_1123_DATE_TIME` added as the primary parse path. It is stateless, thread-safe, and handles all valid RFC 2822 variants including `GMT`, `+0000`, optional day-of-week, and single-digit days. `SimpleDateFormat` patterns retained as fallback but converted to `ThreadLocal` (see #13).
+
+### 12. Redirect Resolver HEAD Blocked by Trackers [G21]
+- **Status:** **FIXED.**
+- **Fix:** `resolveRedirects` now tries HEAD first. If the response is 4xx/5xx (tracker blocking HEAD), it falls back to a GET with `Range: bytes=0-0`. Nearly zero data transferred; OkHttp follows the full redirect chain and `response.request.url` contains the final CDN URL. Both HEAD and GET failures log a warning and return the original URL unchanged.
+
+### 13. Thread-Safety Risk (SimpleDateFormat) [Parser]
+- **Status:** **FIXED.**
+- **Fix:** `DATE_FORMATS` shared statics replaced with `ThreadLocal.withInitial { listOf(...) }`. Each thread gets its own `SimpleDateFormat` instances. `DateTimeFormatter.RFC_1123_DATE_TIME` (now the primary path) is inherently thread-safe.
+
+### 14. Silent WiFi Blocking (Manual Download) [Medium]
+- **Status:** **FIXED.**
+- **Fix:** `FeedDetailViewModel.downloadEpisode` now calls `downloadRepository.checkMobileDownloadBlocked(feedId)`. If blocked, it stores the episode ID in `pendingMobileEpisodeId` and raises `_showMobileWarning = true`. `confirmMobileDownload` checks `pendingMobileEpisodeId` — if set, downloads that single episode via `enqueueDownloadUseCase`; if null, runs the bulk `autoDownloadNewEpisodes` path (existing refresh behaviour). `dismissMobileWarning` clears both the flag and the pending ID.
+
 
 ### 8. Double Fetch on Subscribe [G1]
 - **Status:** **DEFERRED** — requires UX refactor of `AddFeedViewModel` preview step. Accepted for now.
 
 ### 9. `isProtected` Veto in Bulk Delete
 - **Design decision:** `isProtected` is the auto-deletion veto — it guards against automated cleanup/retention processes. Manual unsubscribe with "delete downloads" is explicit user intent. Furthermore, since the DB row is CASCADE-deleted, preserving the file would create an unmanaged orphan with no record pointing to it — strictly worse. Current behaviour is correct. Architecture non-negotiable #4 applies to *auto-deletion* only; manual delete is an intentional exception. Documented, no code change required.
+
+---
+
+## ✅ Fixed 2026-05-10 — pubDate Parser Root Cause + Download Disappearing
+
+### 15. `FeedParser.parseDate()` — Tue/Thu Day Abbreviation Collides with ISO 8601 'T' [Critical]
+- **Status:** **FIXED (confirmed on device).**
+- **Root cause:** `if (trimmed.contains('T'))` was the ISO 8601 detection condition. RFC 1123 date strings beginning with day-of-week abbreviations "Tue" or "Thu" also contain uppercase 'T'. Both are present in the substring "Tue" and "Thu". When triggered, the code attempted `Instant.parse("Tue, 05 May 2026 11:00:00 +0000")` (fails), then `Instant.parse("Tue,T05TMayT2026T11:00:00T+0000")` (all spaces replaced with T — also fails), returned `0L` and never fell through to `RFC_1123_DATE_TIME` which would correctly parse it.
+- **Affected feeds:** Any podcast publishing on Tuesday or Thursday. Ask a Spaceman (weekly Tuesday) had 272/277 episodes with pubDate=0, causing wrong sort order (all to the bottom) and blank date display.
+- **Fix:** `if (trimmed.isNotEmpty() && trimmed[0].isDigit() && trimmed.contains('T'))`. ISO 8601 strings always start with the year (digit); RFC 1123 strings always start with the day abbreviation (letter). One-char lookahead is sufficient.
+- **Self-healing:** `mergeWithExisting()` takes `pubDate` from the freshly-parsed incoming episode. The first pull-to-refresh after the fix updates all previously-zero pubDates in the DB automatically — no data migration required.
+
+### 16. Downloads Disappearing on Pull-to-Refresh [High]
+- **Status:** **RESOLVED** (consequence of fix #15, confirmed on device).
+- **Root cause:** In `autoDownloadNewEpisodes()` (DOWNLOAD_NEWEST strategy), retention cleanup uses `trulyNew = toDownload.count { it.pubDate > newestDate }`. With `newestDate = 0L` (all existing downloads had pubDate=0) and all new candidates also having pubDate=0, `trulyNew = count { 0 > 0 } = 0`. This meant `effectiveKeep = keepCount - inFlight - 0`, so cleanup targeted the full keepCount slots. If the user had manually downloaded more episodes than keepCount allowed, the oldest (by insertion order, due to `id ASC` tiebreak) were silently deleted.
+- **Fix:** Resolved as a consequence of fix #15. After the parseDate fix, episodes have distinct non-zero pubDates, `trulyNew` correctly counts genuinely new episodes, and the retention window expands appropriately. First pull-to-refresh heals all pubDates in DB.

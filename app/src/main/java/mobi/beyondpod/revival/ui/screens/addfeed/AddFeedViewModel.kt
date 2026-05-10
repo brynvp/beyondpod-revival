@@ -66,6 +66,10 @@ class AddFeedViewModel @Inject constructor(
      * (title, artwork, episodes) happens in Phase 3 via FeedUpdateWorker.
      */
     fun fetchPreview() {
+        // Guard: ignore taps while a network request is already in flight.
+        // The button flickers blue→grey→blue during the RSS fetch; without this guard
+        // a second tap re-enters and creates a duplicate DB record.
+        if (_uiState.value is AddFeedUiState.Loading) return
         val url = urlInput.trim()
         if (url.isBlank()) {
             _uiState.value = AddFeedUiState.Error("Please enter a feed URL")

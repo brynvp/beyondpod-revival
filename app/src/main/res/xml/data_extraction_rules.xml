@@ -1,19 +1,25 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Data extraction rules for API 31+.
+    See backup_rules.xml for the rationale on excluding the database.
+    Device-to-device transfers also exclude the DB — fresh subscribe + RSS refresh
+    is preferable to transferring stale download states to a new device.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="database" path="beyondpod.db"/>
+        <exclude domain="database" path="beyondpod.db-shm"/>
+        <exclude domain="database" path="beyondpod.db-wal"/>
+        <exclude domain="database" path="workdb"/>
+        <exclude domain="database" path="workdb-shm"/>
+        <exclude domain="database" path="workdb-wal"/>
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="database" path="beyondpod.db"/>
+        <exclude domain="database" path="beyondpod.db-shm"/>
+        <exclude domain="database" path="beyondpod.db-wal"/>
+        <exclude domain="database" path="workdb"/>
+        <exclude domain="database" path="workdb-shm"/>
+        <exclude domain="database" path="workdb-wal"/>
     </device-transfer>
-    -->
 </data-extraction-rules>

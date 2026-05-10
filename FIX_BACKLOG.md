@@ -17,6 +17,20 @@
 
 **All backlog groups complete. Post-audit fixes applied 2026-05-05 (see below). G1 deferred.**
 
+### Post-Beta Fixes (2026-05-09 and 2026-05-10)
+
+| Item | Fix | Date |
+|------|-----|------|
+| `@Upsert` return -1 | `upsertEpisode` now returns `byGuid.id`/`byUrl.id` on match, preventing archiveRemovedEpisodes from treating every episode as removed | 2026-05-09 |
+| Ghost DOWNLOADING rows | `reconcileStalledDownloads()` resets stuck DOWNLOADING episodes before slot calculation | 2026-05-09 |
+| Redirect resolver | `resolveRedirects()` in DownloadRepositoryImpl uses OkHttp HEAD (fallback GET) to pre-resolve tracking URLs — fixes ERROR_TOO_MANY_REDIRECTS | 2026-05-09 |
+| Subscribe double-tap guard | `AddFeedViewModel.fetchPreview` early-returns if already Loading | 2026-05-09 |
+| Subscribe in-flight guard | `PodcastSearchViewModel` tracks subscribing URLs; button disabled while in-flight | 2026-05-09 |
+| OPML import first-refresh | `BackupViewModel` now enqueues `FeedUpdateWorker(ALL_FEEDS, IS_MANUAL=true)` after import | 2026-05-09 |
+| Three-dot menu | `EpisodeListItem` overflow menu: Delete download / Favourite / Share (stub) | 2026-05-09 |
+| **`FeedParser.parseDate()` — pubDate=0 root cause** | `if (trimmed.contains('T'))` → `if (trimmed.isNotEmpty() && trimmed[0].isDigit() && trimmed.contains('T'))`. Day-of-week abbreviations "Tue"/"Thu" contain uppercase 'T' and were incorrectly triggering the ISO 8601 branch, silently returning 0L without falling through to RFC_1123_DATE_TIME. Ask a Spaceman (weekly Tuesday) had 272/277 episodes with pubDate=0. | **2026-05-10** |
+| **Download-disappearing on pull-to-refresh** | Consequence of pubDate=0: `trulyNew = count { 0 > 0L } = 0` in retention cleanup, so `effectiveKeep = keepCount`, causing manually-downloaded episodes beyond the keep cap to be deleted. First pull-to-refresh after the pubDate fix heals all pubDates in DB (mergeWithExisting takes pubDate from incoming), permanently resolving both issues. | **2026-05-10** |
+
 ### Post-Audit Fixes (Gemini red team pass 2 — 2026-05-05)
 
 | Item | Fix |
