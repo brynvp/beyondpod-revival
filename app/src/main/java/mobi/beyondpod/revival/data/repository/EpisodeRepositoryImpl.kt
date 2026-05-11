@@ -285,7 +285,7 @@ class EpisodeRepositoryImpl @Inject constructor(
         lastAccessed            = existing.lastAccessed,
         isStarred               = existing.isStarred,
         isProtected             = existing.isProtected,
-        isArchived              = existing.isArchived,
+        isArchived              = incoming.isArchived,   // RSS appearance un-archives; toEntity() always false
         isInMyEpisodes          = existing.isInMyEpisodes,
         addedToMyEpisodes       = existing.addedToMyEpisodes,
         // ── Preserve all download state ──────────────────────────────────────
