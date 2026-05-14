@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,8 +13,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.entity.DownloadStateEnum
+import mobi.beyondpod.revival.data.repository.DownloadRepository
 import java.io.File
 import javax.inject.Inject
+
+private const val TAG = "BP.DownloadReceiver"
 
 /**
  * Receives [DownloadManager.ACTION_DOWNLOAD_COMPLETE] and updates the episode's
@@ -25,12 +29,19 @@ import javax.inject.Inject
  *
  * We store the system download ID in [EpisodeEntity.downloadId] at enqueue time,
  * so we can look the episode up here and update its state accordingly.
+ *
+ * After marking the episode DOWNLOADED we immediately call [DownloadRepository.autoDownloadNewEpisodes]
+ * for the same feed. This chains downloads without requiring WorkManager to schedule the next
+ * run — critical for keeping downloads alive while the screen is locked and Doze mode has
+ * deferred WorkManager. ACTION_DOWNLOAD_COMPLETE is a system broadcast delivered even during
+ * Doze, so this chain continues regardless of screen state.
  */
 @AndroidEntryPoint
 class DownloadCompleteReceiver : BroadcastReceiver() {
 
     @Inject lateinit var episodeDao: EpisodeDao
     @Inject lateinit var downloadManager: DownloadManager
+    @Inject lateinit var downloadRepository: DownloadRepository
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
@@ -77,6 +88,16 @@ class DownloadCompleteReceiver : BroadcastReceiver() {
                         DownloadStateEnum.DOWNLOADED,
                         file.absolutePath,
                         file.length()
+                    )
+                    // Chain: immediately queue the next episode for this feed.
+                    // WorkManager is deferred during Doze, so without this the download
+                    // queue stalls when the screen is locked. ACTION_DOWNLOAD_COMPLETE is
+                    // a system broadcast — it fires even during Doze — keeping the chain alive.
+                    Log.d(TAG, "episode=${episode.id} DOWNLOADED — triggering next auto-download for feed=${episode.feedId}")
+                    downloadRepository.autoDownloadNewEpisodes(
+                        feedId        = episode.feedId,
+                        isManualRefresh = false,
+                        mobileAllowed = false
                     )
                 } else {
                     // File URI resolved but file missing — treat as failure
