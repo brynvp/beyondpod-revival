@@ -160,8 +160,18 @@ class DownloadRepositoryImpl @Inject constructor(
      * This reconciliation runs before the slot calculation in autoDownloadNewEpisodes.
      */
     private suspend fun reconcileStalledDownloads(feedId: Long) {
+        // Step 0: bulk-reset any DOWNLOADING/QUEUED rows with no downloadId.
+        // countInFlightDownloads counts these but reconcile's getDownloadingEpisodesForFeed
+        // filters them out (downloadId IS NOT NULL), so they accumulate invisibly across
+        // sessions, inflating inFlight to 1000+ and permanently blocking new downloads.
+        val ghostsReset = episodeDao.resetNullDownloadIdGhosts(feedId)
+        if (ghostsReset > 0)
+            Log.w(TAG, "reconcile: feed=$feedId reset $ghostsReset null-downloadId ghost(s) → NOT_DOWNLOADED")
+
         val downloading = episodeDao.getDownloadingEpisodesForFeed(feedId)
         if (downloading.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val onWifi = isOnWifi()
         for (episode in downloading) {
             val dmId = episode.downloadId ?: run {
                 // No downloadId — definitely ghost; reset immediately
@@ -170,15 +180,43 @@ class DownloadRepositoryImpl @Inject constructor(
                 continue
             }
             val cursor = downloadManager.query(DownloadManager.Query().setFilterById(dmId))
-            val isActive = cursor.use { c ->
-                if (!c.moveToFirst()) return@use false
-                val statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                val status = c.getInt(statusCol)
-                status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING ||
-                status == DownloadManager.STATUS_PAUSED
+            val stalled = cursor.use { c ->
+                if (!c.moveToFirst()) return@use true   // not in DM at all → ghost
+                val status       = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS))
+                val reason       = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_REASON))
+                val bytesDown    = c.getLong(c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                val lastModified = c.getLong(c.getColumnIndex(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP))
+                val ageMs        = now - lastModified
+
+                when (status) {
+                    DownloadManager.STATUS_RUNNING -> false   // actively downloading — keep
+                    DownloadManager.STATUS_SUCCESSFUL,
+                    DownloadManager.STATUS_FAILED  -> true    // terminal — receiver missed it; reset
+                    DownloadManager.STATUS_PENDING -> {
+                        // PENDING with no bytes for > 15 min = DownloadManager has forgotten it
+                        // or is permanently throttled. Cancel and retry fresh next refresh.
+                        val stale = bytesDown == 0L && ageMs > 15 * 60_000L
+                        if (stale) Log.w(TAG, "reconcile: episode=${episode.id} dmId=$dmId PENDING ${ageMs/1000}s with 0 bytes — stale")
+                        stale
+                    }
+                    DownloadManager.STATUS_PAUSED  -> {
+                        // PAUSED_WAITING_FOR_NETWORK while on WiFi = network flag mismatch or stale
+                        // PAUSED_WAITING_TO_RETRY = previous failure; treat as stalled
+                        val networkStall = onWifi && (reason == DownloadManager.PAUSED_WAITING_FOR_NETWORK ||
+                                                       reason == DownloadManager.PAUSED_QUEUED_FOR_WIFI)
+                        val retryStall   = reason == DownloadManager.PAUSED_WAITING_TO_RETRY
+                        // Also catch generic PENDING-like stall: 0 bytes, > 15 min old
+                        val ageStall     = bytesDown == 0L && ageMs > 15 * 60_000L
+                        if (networkStall || retryStall || ageStall)
+                            Log.w(TAG, "reconcile: episode=${episode.id} dmId=$dmId PAUSED reason=$reason age=${ageMs/1000}s bytes=$bytesDown onWifi=$onWifi — stale")
+                        networkStall || retryStall || ageStall
+                    }
+                    else -> true  // unknown status — reset to be safe
+                }
             }
-            if (!isActive) {
-                Log.w(TAG, "reconcile: episode=${episode.id} '${episode.title}' dmId=$dmId not active in DownloadManager — resetting to NOT_DOWNLOADED")
+            if (stalled) {
+                Log.w(TAG, "reconcile: episode=${episode.id} '${episode.title}' dmId=$dmId stalled — cancelling DM entry, resetting to NOT_DOWNLOADED")
+                downloadManager.remove(dmId)
                 episodeDao.updateDownloadState(episode.id, DownloadStateEnum.NOT_DOWNLOADED, null)
             }
         }

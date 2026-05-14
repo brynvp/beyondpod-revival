@@ -22,8 +22,8 @@ android {
         applicationId = "mobi.beyondpod.revival"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.7-beta"
+        versionCode = 8
+        versionName = "1.0.8-beta"
 
         // Build timestamp injected at compile time — shows in About screen so every
         // installed build is uniquely identifiable without needing a version bump.

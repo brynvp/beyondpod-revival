@@ -266,6 +266,19 @@ interface EpisodeDao {
     """)
     suspend fun getDownloadingEpisodesForFeed(feedId: Long): List<EpisodeEntity>
 
+    // Bulk-reset ghost DOWNLOADING/QUEUED rows that have no DownloadManager ID.
+    // These are definitionally unreachable — countInFlightDownloads counts them but
+    // reconcileStalledDownloads cannot see them (downloadId IS NOT NULL filter above).
+    // Without this, null-downloadId ghosts accumulate across sessions and permanently
+    // inflate inFlight, keeping slots=0 forever. Called at the start of reconcile.
+    @Query("""
+        UPDATE episodes SET downloadState = 'NOT_DOWNLOADED', downloadId = NULL
+        WHERE feedId = :feedId
+        AND downloadState IN ('DOWNLOADING', 'QUEUED')
+        AND downloadId IS NULL
+    """)
+    suspend fun resetNullDownloadIdGhosts(feedId: Long): Int
+
     // Partial download resume support (legacy — kept for DB schema compatibility)
     @Query("UPDATE episodes SET downloadBytesDownloaded = :bytes WHERE id = :episodeId")
     suspend fun updateDownloadProgress(episodeId: Long, bytes: Long)
