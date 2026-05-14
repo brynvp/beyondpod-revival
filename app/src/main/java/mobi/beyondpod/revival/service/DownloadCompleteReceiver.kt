@@ -93,11 +93,18 @@ class DownloadCompleteReceiver : BroadcastReceiver() {
                     // WorkManager is deferred during Doze, so without this the download
                     // queue stalls when the screen is locked. ACTION_DOWNLOAD_COMPLETE is
                     // a system broadcast — it fires even during Doze — keeping the chain alive.
-                    Log.d(TAG, "episode=${episode.id} DOWNLOADED — triggering next auto-download for feed=${episode.feedId}")
+                    //
+                    // mobileAllowed: reflect the current network policy rather than
+                    // hardcoding false. If the user approved mobile downloads (WiFi-only is
+                    // off, or we're on WiFi), the chain should continue on the same network.
+                    // Without this, only the first episode in a manually-approved mobile
+                    // batch downloads — the rest are silently skipped by the chain.
+                    val mobileAllowed = !downloadRepository.checkMobileDownloadBlocked(episode.feedId)
+                    Log.d(TAG, "episode=${episode.id} DOWNLOADED — triggering next auto-download for feed=${episode.feedId} mobileAllowed=$mobileAllowed")
                     downloadRepository.autoDownloadNewEpisodes(
-                        feedId        = episode.feedId,
+                        feedId          = episode.feedId,
                         isManualRefresh = false,
-                        mobileAllowed = false
+                        mobileAllowed   = mobileAllowed
                     )
                 } else {
                     // File URI resolved but file missing — treat as failure

@@ -292,7 +292,10 @@ class DownloadRepositoryImpl @Inject constructor(
             .let { if (it.length in 2..4 && it.all { c -> c.isLetter() }) it else "mp3" }
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
         val dir = File(baseDir, "podcasts/${episode.feedId}").also { it.mkdirs() }
-        val outputFile = File(dir, "$safeTitle.$ext")
+        // Episode ID suffix guarantees uniqueness within a feed — same-titled episodes
+        // (e.g. "Bonus Interview", "News Update") would otherwise collide and overwrite
+        // each other in DownloadManager.
+        val outputFile = File(dir, "${safeTitle}_${episode.id}.$ext")
 
         // When WiFi-only is set and the user has NOT explicitly approved mobile data,
         // constrain DownloadManager to WiFi only.  This means:

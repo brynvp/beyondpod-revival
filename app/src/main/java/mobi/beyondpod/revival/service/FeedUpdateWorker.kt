@@ -69,7 +69,17 @@ class FeedUpdateWorker @AssistedInject constructor(
                 val semaphore = Semaphore(6)
                 coroutineScope {
                     feeds.map { feed ->
-                        async { semaphore.withPermit { processFeed(feed.id, isManual) } }
+                        async {
+                            semaphore.withPermit {
+                                // Isolate per-feed failures — one bad feed (malformed URL,
+                                // server error, DB exception) must not cancel the entire
+                                // batch via awaitAll(). Log and continue with other feeds.
+                                runCatching { processFeed(feed.id, isManual) }
+                                    .onFailure { e ->
+                                        Log.e(TAG, "processFeed FAILED feed=${feed.id} '${feed.title}': ${e.message}", e)
+                                    }
+                            }
+                        }
                     }.awaitAll()
                 }
             } else {
