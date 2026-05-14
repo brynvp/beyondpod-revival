@@ -463,6 +463,19 @@ class DownloadRepositoryImpl @Inject constructor(
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
                     val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
                     val trulyNew      = toDownload.count { it.pubDate > newestDate }
+
+                    // Backlog suppression: when the keep window is already at capacity AND
+                    // every candidate is older than the current window, downloading any of
+                    // them would just cause retention cleanup to delete them immediately —
+                    // an endless download-then-delete cycle burning bandwidth and battery.
+                    // Only manual refreshes bypass this (user explicitly wants backlog).
+                    if (!isManualRefresh && toDownload.isNotEmpty()
+                            && allDownloaded.size >= keepCount && trulyNew == 0) {
+                        Log.d(TAG, "autoDownload NEWEST feed=$feedId suppressed: window full " +
+                            "(${allDownloaded.size}/$keepCount), all candidates older than window")
+                        return
+                    }
+
                     val effectiveKeep = if (inFlight >= keepCount) keepCount
                                         else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
                     applyRetentionCleanup(allDownloaded, effectiveKeep)
@@ -529,6 +542,16 @@ class DownloadRepositoryImpl @Inject constructor(
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
                     val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
                     val trulyNew      = toDownload.count { it.pubDate > newestDate }
+
+                    // Backlog suppression: same logic as DOWNLOAD_NEWEST — stop the chain
+                    // when the keep window is full and all candidates are older than the window.
+                    if (!isManualRefresh && toDownload.isNotEmpty()
+                            && allDownloaded.size >= keepCount && trulyNew == 0) {
+                        Log.d(TAG, "autoDownload GLOBAL feed=$feedId suppressed: window full " +
+                            "(${allDownloaded.size}/$keepCount), all candidates older than window")
+                        return
+                    }
+
                     val effectiveKeep = if (inFlight >= keepCount) keepCount
                                         else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
                     applyRetentionCleanup(allDownloaded, effectiveKeep)
