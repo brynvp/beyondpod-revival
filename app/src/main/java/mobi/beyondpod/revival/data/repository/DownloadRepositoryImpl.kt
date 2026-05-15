@@ -464,8 +464,12 @@ class DownloadRepositoryImpl @Inject constructor(
                 // all downloaded files wiped on every refresh pass.
                 if (keepCount != null) {
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
-                    val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
-                    val trulyNew      = toDownload.count { it.pubDate > newestDate }
+                    // Compare against the OLDEST downloaded episode, not the newest.
+                    // A candidate "belongs in the window" if it's fresher than the oldest
+                    // episode currently downloaded — it would replace that one. Using newestDate
+                    // means trulyNew is always 0 after the first download, locking the window.
+                    val oldestInWindow = allDownloaded.lastOrNull()?.pubDate ?: Long.MIN_VALUE
+                    val trulyNew       = toDownload.count { it.pubDate > oldestInWindow }
 
                     // Step B cleanup runs UNCONDITIONALLY — even when no downloads follow.
                     // Without this, an over-full window never gets trimmed when suppression fires.
@@ -473,13 +477,12 @@ class DownloadRepositoryImpl @Inject constructor(
                                         else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
                     applyRetentionCleanup(allDownloaded, effectiveKeep)
 
-                    // Backlog suppression: when window is at/above capacity AND all candidates are
-                    // older than the newest downloaded episode, suppress new downloads (auto + manual).
-                    // If window has room (allDownloaded < keepCount), fill it with the next newest
-                    // available episodes so the user gets their N-episode buffer.
+                    // Backlog suppression: when window is full AND no candidate is fresher than
+                    // the oldest downloaded episode, there is nothing worth swapping in — suppress.
+                    // If window has room, or if candidates would displace old window entries, download.
                     if (toDownload.isNotEmpty() && allDownloaded.size >= keepCount && trulyNew == 0) {
                         Log.d(TAG, "autoDownload NEWEST feed=$feedId suppressed: window full " +
-                            "(${allDownloaded.size}/$keepCount), all ${toDownload.size} candidates older than window")
+                            "(${allDownloaded.size}/$keepCount), all ${toDownload.size} candidates older than oldest in window")
                         return
                     }
                 }
@@ -543,8 +546,13 @@ class DownloadRepositoryImpl @Inject constructor(
                 // all downloaded files wiped on every refresh, causing "downloads disappear" symptom.
                 if (keepCount != null) {
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
-                    val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
-                    val trulyNew      = toDownload.count { it.pubDate > newestDate }
+                    // Compare against the OLDEST downloaded episode, not the newest.
+                    // A candidate "belongs in the window" if it's fresher than the oldest
+                    // episode currently downloaded — it would displace that one. Using newestDate
+                    // (firstOrNull) means trulyNew is always 0 after the first download, because
+                    // nothing can ever be newer than the newest — permanently locking the window.
+                    val oldestInWindow = allDownloaded.lastOrNull()?.pubDate ?: Long.MIN_VALUE
+                    val trulyNew       = toDownload.count { it.pubDate > oldestInWindow }
 
                     // Step B cleanup runs UNCONDITIONALLY — even when no downloads will follow.
                     // Without this, an over-full window (e.g. 7 > keepCount=5 from a previous
@@ -553,14 +561,12 @@ class DownloadRepositoryImpl @Inject constructor(
                                         else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
                     applyRetentionCleanup(allDownloaded, effectiveKeep)
 
-                    // Backlog suppression: when the window is already at/above capacity AND every
-                    // candidate is older than the newest downloaded episode, suppress new downloads
-                    // in both auto and manual modes. If the window has room (allDownloaded < keepCount),
-                    // fill it — even with slightly older content — so the user gets their N episodes.
-                    // Old deep-backlog suppression only kicks in when the window is genuinely full.
+                    // Backlog suppression: when the window is full AND no candidate is fresher
+                    // than the OLDEST downloaded episode, there is nothing worth swapping in.
+                    // If window has room, or candidates would displace old window entries, download.
                     if (toDownload.isNotEmpty() && allDownloaded.size >= keepCount && trulyNew == 0) {
                         Log.d(TAG, "autoDownload GLOBAL feed=$feedId suppressed: window full " +
-                            "(${allDownloaded.size}/$keepCount), all ${toDownload.size} candidates older than window")
+                            "(${allDownloaded.size}/$keepCount), all ${toDownload.size} candidates older than oldest in window")
                         return
                     }
                 }
