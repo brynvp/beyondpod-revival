@@ -183,13 +183,18 @@ class SettingsViewModel @Inject constructor(
     fun setDownloadOnWifiOnly(v: Boolean)    = set { it[AppSettings.DOWNLOAD_ON_WIFI_ONLY] = v }
     fun setGlobalDownloadCount(v: Int)       = set { it[AppSettings.GLOBAL_DOWNLOAD_COUNT] = v }
     fun setGlobalMaxKeep(v: Int) {
-        set { it[AppSettings.GLOBAL_MAX_KEEP] = v }
-        // G15: run on IO — DB + file I/O across all feeds must not run on the UI dispatcher
-        viewModelScope.launch { withContext(Dispatchers.IO) { downloadRepository.runGlobalRetentionCleanup() } }
+        // G15: sequence write then cleanup in ONE coroutine — cleanup reads DataStore, so it
+        // must not launch concurrently with the write or it may read the old value and no-op.
+        viewModelScope.launch {
+            dataStore.edit { it[AppSettings.GLOBAL_MAX_KEEP] = v }
+            withContext(Dispatchers.IO) { downloadRepository.runGlobalRetentionCleanup() }
+        }
     }
     fun setGlobalDeleteOlderThanDays(v: Int) {
-        set { it[AppSettings.GLOBAL_DELETE_OLDER_THAN_DAYS] = v }
-        viewModelScope.launch { withContext(Dispatchers.IO) { downloadRepository.runGlobalRetentionCleanup() } }
+        viewModelScope.launch {
+            dataStore.edit { it[AppSettings.GLOBAL_DELETE_OLDER_THAN_DAYS] = v }
+            withContext(Dispatchers.IO) { downloadRepository.runGlobalRetentionCleanup() }
+        }
     }
     fun setAutoDeletePlayed(v: Boolean)      = set { it[AppSettings.AUTO_DELETE_PLAYED] = v }
 
