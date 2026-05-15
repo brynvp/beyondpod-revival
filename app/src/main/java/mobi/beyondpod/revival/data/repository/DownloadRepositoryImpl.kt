@@ -439,55 +439,43 @@ class DownloadRepositoryImpl @Inject constructor(
 
         when (effectiveStrategy) {
             DownloadStrategy.DOWNLOAD_NEWEST -> {
-                // Peek at incoming downloads first so Step B can make exactly the right amount of room.
-                // Rule #8 still holds — cleanup EXECUTES before enqueue, we just calculate first.
                 val inFlight = episodeDao.countInFlightDownloads(feedId)
                 val slots    = (downloadLimit - inFlight).coerceAtLeast(0)
-                val toDownload = if (downloadCount > 0 && slots > 0)
-                    episodeDao.getNotDownloadedNewest(feedId, slots)
-                else emptyList()
 
-                // Diagnostic: log state breakdown when slots exist but nothing to download.
-                if (toDownload.isEmpty() && slots > 0) {
-                    val allEps = episodeDao.getEpisodesForFeedList(feedId)
-                    val states = allEps.groupBy { it.downloadState.name }.mapValues { it.value.size }
-                    val archived = allEps.count { it.isArchived }
-                    Log.d(TAG, "autoDownload DIAG NEWEST feed=$feedId total=${allEps.size} archived=$archived states=$states")
-                }
-
-                // Step B — retention: only make room for episodes that are NEWER than the current
-                // window. Old backlog episodes (pubDate < newestDownloaded) don't shrink the keep
-                // threshold — otherwise having any backlog at all would delete all downloads.
-                //
-                // Guard: when in-flight already meets/exceeds keepCount, do NOT delete currently-
-                // downloaded files. Without this, keepCount=3 + inFlight=10 → effectiveKeep=0 →
-                // all downloaded files wiped on every refresh pass.
                 if (keepCount != null) {
+                    // Target window: the keepCount newest non-archived episodes (any state).
+                    // These are the episodes that SHOULD be on disk. Anything downloaded outside
+                    // this set is cleaned up; anything NOT_DOWNLOADED inside it gets queued.
+                    val targetWindow = episodeDao.getNewestEpisodesForWindow(feedId, keepCount)
+                    val targetIds    = targetWindow.map { it.id }.toSet()
+
+                    // Step B — cleanup: delete DOWNLOADED episodes outside the target window.
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
-                    // Compare against the OLDEST downloaded episode, not the newest.
-                    // A candidate "belongs in the window" if it's fresher than the oldest
-                    // episode currently downloaded — it would replace that one. Using newestDate
-                    // means trulyNew is always 0 after the first download, locking the window.
-                    val oldestInWindow = allDownloaded.lastOrNull()?.pubDate ?: Long.MIN_VALUE
-                    val trulyNew       = toDownload.count { it.pubDate > oldestInWindow }
-
-                    // Step B cleanup runs UNCONDITIONALLY — even when no downloads follow.
-                    // Without this, an over-full window never gets trimmed when suppression fires.
-                    val effectiveKeep = if (inFlight >= keepCount) keepCount
-                                        else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
-                    applyRetentionCleanup(allDownloaded, effectiveKeep)
-
-                    // Backlog suppression: when window is full AND no candidate is fresher than
-                    // the oldest downloaded episode, there is nothing worth swapping in — suppress.
-                    // If window has room, or if candidates would displace old window entries, download.
-                    if (toDownload.isNotEmpty() && allDownloaded.size >= keepCount && trulyNew == 0) {
-                        Log.d(TAG, "autoDownload NEWEST feed=$feedId suppressed: window full " +
-                            "(${allDownloaded.size}/$keepCount), all ${toDownload.size} candidates older than oldest in window")
-                        return
+                    val playingId = PlaybackStateHolder.currentlyPlayingEpisodeId
+                    for (ep in allDownloaded) {
+                        if (ep.id in targetIds) continue       // belongs in window — keep
+                        if (ep.id == playingId) continue       // Q9: never delete playing episode
+                        ep.localFilePath?.let { File(it).delete() }
+                        episodeDao.updateDownloadState(ep.id, DownloadStateEnum.DELETED, null)
                     }
+
+                    // Step C — enqueue NOT_DOWNLOADED episodes from the target window, up to slots.
+                    val toDownload = targetWindow
+                        .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED }
+                        .take(slots)
+                    if (toDownload.isEmpty() && slots > 0) {
+                        val allEps = episodeDao.getEpisodesForFeedList(feedId)
+                        val states = allEps.groupBy { it.downloadState.name }.mapValues { it.value.size }
+                        val archived = allEps.count { it.isArchived }
+                        Log.d(TAG, "autoDownload DIAG NEWEST feed=$feedId total=${allEps.size} archived=$archived states=$states")
+                    }
+                    toDownload.forEach { ep -> enqueueDownload(ep.id, mobileAllowed) }
+                } else {
+                    // No keepCount limit — just download the newest available up to slots.
+                    val toDownload = if (slots > 0) episodeDao.getNotDownloadedNewest(feedId, slots)
+                                     else emptyList()
+                    toDownload.forEach { ep -> enqueueDownload(ep.id, mobileAllowed) }
                 }
-                // Step C — enqueue
-                toDownload.forEach { ep -> enqueueDownload(ep.id, mobileAllowed) }
             }
 
             DownloadStrategy.DOWNLOAD_IN_ORDER -> {
@@ -523,55 +511,52 @@ class DownloadRepositoryImpl @Inject constructor(
             }
 
             DownloadStrategy.GLOBAL -> {
-                // Peek first — same room-making logic as DOWNLOAD_NEWEST
                 val inFlight = episodeDao.countInFlightDownloads(feedId)
                 val slots    = (downloadLimit - inFlight).coerceAtLeast(0)
-                val toDownload = if (downloadCount > 0 && slots > 0)
-                    episodeDao.getNotDownloadedNewest(feedId, slots)
-                else emptyList()
-                Log.d(TAG, "autoDownload GLOBAL feed=$feedId inFlight=$inFlight slots=$slots toDownload=${toDownload.size} downloadCount=$downloadCount")
+                Log.d(TAG, "autoDownload GLOBAL feed=$feedId inFlight=$inFlight slots=$slots downloadCount=$downloadCount")
 
-                // Diagnostic: log state breakdown when slots exist but nothing to download.
-                if (toDownload.isEmpty() && slots > 0) {
-                    val allEps = episodeDao.getEpisodesForFeedList(feedId)
-                    val states = allEps.groupBy { it.downloadState.name }.mapValues { it.value.size }
-                    val archived = allEps.count { it.isArchived }
-                    Log.d(TAG, "autoDownload DIAG GLOBAL feed=$feedId total=${allEps.size} archived=$archived states=$states")
-                }
-
-                // Step B — retention: only count truly new (newer than window) when shrinking threshold.
-                //
-                // Guard: when in-flight already meets/exceeds keepCount, do NOT delete currently-
-                // downloaded files. Without this, keepCount=3 + inFlight=31 → effectiveKeep=0 →
-                // all downloaded files wiped on every refresh, causing "downloads disappear" symptom.
                 if (keepCount != null) {
+                    // Target window: the keepCount newest non-archived episodes (any state).
+                    // This defines the canonical "keep the Y newest" window. The window is based
+                    // on pubDate rank, not on what happens to be downloaded — so old backlog
+                    // episodes that snuck into the window are automatically displaced on the next
+                    // refresh when the correct newer episodes appear in the target set.
+                    val targetWindow = episodeDao.getNewestEpisodesForWindow(feedId, keepCount)
+                    val targetIds    = targetWindow.map { it.id }.toSet()
+
+                    // Step B — cleanup: delete DOWNLOADED episodes that fall outside the target
+                    // window. These are episodes whose pubDate rank has been displaced by newer
+                    // content — they should not remain on disk.
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
-                    // Compare against the OLDEST downloaded episode, not the newest.
-                    // A candidate "belongs in the window" if it's fresher than the oldest
-                    // episode currently downloaded — it would displace that one. Using newestDate
-                    // (firstOrNull) means trulyNew is always 0 after the first download, because
-                    // nothing can ever be newer than the newest — permanently locking the window.
-                    val oldestInWindow = allDownloaded.lastOrNull()?.pubDate ?: Long.MIN_VALUE
-                    val trulyNew       = toDownload.count { it.pubDate > oldestInWindow }
-
-                    // Step B cleanup runs UNCONDITIONALLY — even when no downloads will follow.
-                    // Without this, an over-full window (e.g. 7 > keepCount=5 from a previous
-                    // bad session) never gets trimmed when suppression fires, deadlocking forever.
-                    val effectiveKeep = if (inFlight >= keepCount) keepCount
-                                        else (keepCount - inFlight - trulyNew).coerceAtLeast(0)
-                    applyRetentionCleanup(allDownloaded, effectiveKeep)
-
-                    // Backlog suppression: when the window is full AND no candidate is fresher
-                    // than the OLDEST downloaded episode, there is nothing worth swapping in.
-                    // If window has room, or candidates would displace old window entries, download.
-                    if (toDownload.isNotEmpty() && allDownloaded.size >= keepCount && trulyNew == 0) {
-                        Log.d(TAG, "autoDownload GLOBAL feed=$feedId suppressed: window full " +
-                            "(${allDownloaded.size}/$keepCount), all ${toDownload.size} candidates older than oldest in window")
-                        return
+                    val playingId = PlaybackStateHolder.currentlyPlayingEpisodeId
+                    for (ep in allDownloaded) {
+                        if (ep.id in targetIds) continue       // belongs in window — keep
+                        if (ep.id == playingId) continue       // Q9: never delete playing episode
+                        ep.localFilePath?.let { File(it).delete() }
+                        episodeDao.updateDownloadState(ep.id, DownloadStateEnum.DELETED, null)
                     }
+
+                    // Step C — enqueue NOT_DOWNLOADED episodes from the target window, up to slots.
+                    // DELETED episodes in the window are intentionally skipped (cleaned for a reason;
+                    // user can manually re-download). DOWNLOADING/QUEUED are already in-flight.
+                    val toDownload = targetWindow
+                        .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED }
+                        .take(slots)
+                    if (toDownload.isEmpty() && slots > 0) {
+                        val allEps = episodeDao.getEpisodesForFeedList(feedId)
+                        val states = allEps.groupBy { it.downloadState.name }.mapValues { it.value.size }
+                        val archived = allEps.count { it.isArchived }
+                        Log.d(TAG, "autoDownload DIAG GLOBAL feed=$feedId total=${allEps.size} archived=$archived states=$states")
+                    } else {
+                        Log.d(TAG, "autoDownload GLOBAL feed=$feedId toDownload=${toDownload.size} targetWindow=${targetWindow.size}")
+                    }
+                    toDownload.forEach { ep -> enqueueDownload(ep.id, mobileAllowed) }
+                } else {
+                    // No keepCount limit — just download the newest available up to slots.
+                    val toDownload = if (slots > 0) episodeDao.getNotDownloadedNewest(feedId, slots)
+                                     else emptyList()
+                    toDownload.forEach { ep -> enqueueDownload(ep.id, mobileAllowed) }
                 }
-                // Step C — enqueue
-                toDownload.forEach { ep -> enqueueDownload(ep.id, mobileAllowed) }
             }
         }
     }

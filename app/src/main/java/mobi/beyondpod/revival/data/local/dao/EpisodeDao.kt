@@ -241,6 +241,18 @@ interface EpisodeDao {
     """)
     suspend fun getNotDownloadedOldest(feedId: Long, count: Int): List<EpisodeEntity>
 
+    // Target download window: the keepCount newest non-archived episodes, any download state.
+    // Used by GLOBAL/DOWNLOAD_NEWEST to define WHICH episodes SHOULD be on disk — the canonical
+    // "keep the Y newest" window. Any DOWNLOADED episode outside this set gets deleted; any
+    // NOT_DOWNLOADED episode inside it gets queued. This replaces the trulyNew/suppression approach.
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId AND isArchived = 0
+        ORDER BY pubDate DESC, id ASC
+        LIMIT :count
+    """)
+    suspend fun getNewestEpisodesForWindow(feedId: Long, count: Int): List<EpisodeEntity>
+
     // Auto-advance: nearest episode in same feed with pubDate strictly after current (ascending = oldest match first)
     @Query("SELECT * FROM episodes WHERE feedId = :feedId AND pubDate > :currentPubDate ORDER BY pubDate ASC LIMIT 1")
     suspend fun getNextNewerEpisode(feedId: Long, currentPubDate: Long): EpisodeEntity?
