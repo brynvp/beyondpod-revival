@@ -467,15 +467,14 @@ class DownloadRepositoryImpl @Inject constructor(
                     val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
                     val trulyNew      = toDownload.count { it.pubDate > newestDate }
 
-                    // Backlog suppression: when the keep window is already at capacity AND
-                    // every candidate is older than the current window, downloading any of
-                    // them would just cause retention cleanup to delete them immediately —
-                    // an endless download-then-delete cycle burning bandwidth and battery.
-                    // Only manual refreshes bypass this (user explicitly wants backlog).
-                    if (!isManualRefresh && toDownload.isNotEmpty()
-                            && allDownloaded.size >= keepCount && trulyNew == 0) {
-                        Log.d(TAG, "autoDownload NEWEST feed=$feedId suppressed: window full " +
-                            "(${allDownloaded.size}/$keepCount), all candidates older than window")
+                    // Backlog suppression: when every candidate is older than the newest
+                    // downloaded episode, downloading any of them would either be deleted
+                    // immediately by retention (if window is full) or fill the window with
+                    // old content the user didn't ask for. Suppress in both auto and manual
+                    // modes — the user can manually tap individual episodes to download backlog.
+                    if (toDownload.isNotEmpty() && trulyNew == 0) {
+                        Log.d(TAG, "autoDownload NEWEST feed=$feedId suppressed: all ${toDownload.size} " +
+                            "candidates older than window (downloaded=${allDownloaded.size}/$keepCount)")
                         return
                     }
 
@@ -546,12 +545,13 @@ class DownloadRepositoryImpl @Inject constructor(
                     val newestDate    = allDownloaded.firstOrNull()?.pubDate ?: Long.MIN_VALUE
                     val trulyNew      = toDownload.count { it.pubDate > newestDate }
 
-                    // Backlog suppression: same logic as DOWNLOAD_NEWEST — stop the chain
-                    // when the keep window is full and all candidates are older than the window.
-                    if (!isManualRefresh && toDownload.isNotEmpty()
-                            && allDownloaded.size >= keepCount && trulyNew == 0) {
-                        Log.d(TAG, "autoDownload GLOBAL feed=$feedId suppressed: window full " +
-                            "(${allDownloaded.size}/$keepCount), all candidates older than window")
+                    // Backlog suppression: same logic as DOWNLOAD_NEWEST — when every candidate
+                    // is older than the newest downloaded episode, suppress in both auto and
+                    // manual modes. Old backlog is never auto-downloaded; user can tap individual
+                    // episodes to download specific old content.
+                    if (toDownload.isNotEmpty() && trulyNew == 0) {
+                        Log.d(TAG, "autoDownload GLOBAL feed=$feedId suppressed: all ${toDownload.size} " +
+                            "candidates older than window (downloaded=${allDownloaded.size}/$keepCount)")
                         return
                     }
 
