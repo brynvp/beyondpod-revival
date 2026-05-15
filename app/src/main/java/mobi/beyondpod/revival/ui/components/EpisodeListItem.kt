@@ -15,15 +15,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -174,13 +175,6 @@ fun EpisodeListItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
-                if (episode.duration > 0) {
-                    Text(
-                        text = " · ${formatDuration(episode.duration)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                }
                 // G5: Archived badge — episode no longer in RSS feed.
                 // Shown in muted secondary colour so it's visible but not alarming.
                 if (episode.isArchived) {
@@ -210,14 +204,95 @@ fun EpisodeListItem(
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
+
+            // Bottom action bar — download status inline below description
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable(onClickLabel = "Play", onClick = onClick)
+                )
+                Spacer(Modifier.width(4.dp))
+                if (episode.duration > 0) {
+                    Text(
+                        text = formatDuration(episode.duration),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                when (episode.downloadState) {
+                    DownloadStateEnum.NOT_DOWNLOADED, DownloadStateEnum.FAILED -> {
+                        if (onDownloadClick != null) {
+                            Row(
+                                modifier = Modifier.clickable(onClick = onDownloadClick),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Download",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                Text(
+                                    text = if (episode.downloadState == DownloadStateEnum.FAILED) "RETRY" else "DOWNLOAD",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                    DownloadStateEnum.DELETED -> {
+                        if (onDownloadClick != null) {
+                            Row(
+                                modifier = Modifier.clickable(onClick = onDownloadClick),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Re-download",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                Text(
+                                    text = "RE-DOWNLOAD",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                                )
+                            }
+                        }
+                    }
+                    DownloadStateEnum.DOWNLOADING, DownloadStateEnum.QUEUED -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    DownloadStateEnum.DOWNLOADED -> { /* nothing shown — already on disk */ }
+                }
+
+                Spacer(Modifier.weight(1f))
+            }
         }
 
         Spacer(Modifier.width(4.dp))
 
-        // Right-side action column: download state icon + three-dot menu
+        // Right-side action column: starred indicator + three-dot menu
         Column(horizontalAlignment = Alignment.End) {
 
-            // Favourite heart (replaces the old Star icon — shows only when starred)
+            // Favourite heart (shows only when starred)
             if (episode.isStarred) {
                 Icon(
                     imageVector = Icons.Default.Favorite,
@@ -227,47 +302,6 @@ fun EpisodeListItem(
                 )
             }
 
-            // Download state icon / button
-            when (episode.downloadState) {
-                DownloadStateEnum.DOWNLOADED -> Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Downloaded",
-                    tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f),
-                    modifier = Modifier.size(24.dp)
-                )
-                DownloadStateEnum.QUEUED,
-                DownloadStateEnum.DOWNLOADING -> Icon(
-                    imageVector = Icons.Default.Download,
-                    contentDescription = "Downloading",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                DownloadStateEnum.FAILED -> {
-                    if (onDownloadClick != null) {
-                        IconButton(onClick = onDownloadClick, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = "Download failed — tap to retry",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-                else -> {
-                    if (onDownloadClick != null) {
-                        IconButton(onClick = onDownloadClick, modifier = Modifier.size(40.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "Download episode",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
             // Three-dot overflow menu: Delete / Share / Favourite
             // Only shown when at least one action callback is provided.
             if (onDeleteClick != null || onShareClick != null || onFavouriteClick != null) {
@@ -275,13 +309,13 @@ fun EpisodeListItem(
                 Box {
                     IconButton(
                         onClick = { menuExpanded = true },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "More options",
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     DropdownMenu(
