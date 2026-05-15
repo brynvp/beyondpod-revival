@@ -30,6 +30,11 @@ interface FeedDao {
     @Query("SELECT * FROM feeds WHERE id = :feedId")
     suspend fun getFeedById(feedId: Long): FeedEntity?
 
+    /** Live Room Flow for a single feed — emits on every DB write. Use in ViewModels
+     *  that need to react to property changes (e.g. per-feed settings). */
+    @Query("SELECT * FROM feeds WHERE id = :feedId")
+    fun getFeedByIdFlow(feedId: Long): Flow<FeedEntity?>
+
     @Query("SELECT * FROM feeds WHERE url = :url LIMIT 1")
     suspend fun getFeedByUrl(url: String): FeedEntity?
 

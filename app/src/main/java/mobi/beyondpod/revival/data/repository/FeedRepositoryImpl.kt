@@ -71,6 +71,7 @@ class FeedRepositoryImpl @Inject constructor(
         feedDao.getFeedsByCategory(categoryId)
 
     override suspend fun getFeedById(id: Long): FeedEntity? = feedDao.getFeedById(id)
+    override fun getFeedByIdFlow(id: Long): Flow<FeedEntity?> = feedDao.getFeedByIdFlow(id)
 
     override suspend fun subscribeToFeed(url: String): Result<FeedEntity> = runCatching {
         // Check the original URL first (fast path — no network required).

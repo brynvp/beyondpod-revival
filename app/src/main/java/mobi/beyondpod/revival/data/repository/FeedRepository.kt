@@ -8,6 +8,10 @@ interface FeedRepository {
     fun getFeedsByCategory(categoryId: Long): Flow<List<FeedEntity>>
     suspend fun getFeedById(id: Long): FeedEntity?
 
+    /** Live Flow — emits every time this feed row is written. Use where the UI must
+     *  reflect property changes immediately (e.g. per-feed settings screen). */
+    fun getFeedByIdFlow(id: Long): Flow<FeedEntity?>
+
     /**
      * Create a minimal feed record for [url]. Full RSS parsing happens in Phase 3
      * (FeedUpdateWorker). Returns the persisted FeedEntity on success.

@@ -554,15 +554,16 @@ private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clickable {
+                                    viewModel.updateFeedProperties(feed.copy(downloadStrategy = strategy))
+                                    showStrategyDialog = false
+                                }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = feed.downloadStrategy == strategy,
-                                onClick = {
-                                    viewModel.updateFeedProperties(feed.copy(downloadStrategy = strategy))
-                                    showStrategyDialog = false
-                                }
+                                onClick  = null  // row click handles selection
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(strategy.toDisplayName())

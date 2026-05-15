@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -83,7 +82,7 @@ class FeedDetailViewModel @Inject constructor(
         )
 
     val uiState: StateFlow<FeedDetailUiState> = combine(
-        flow { emit(feedRepository.getFeedById(feedId)) },
+        feedRepository.getFeedByIdFlow(feedId),   // live Room Flow — re-emits on every DB write
         episodeRepository.getEpisodesForFeed(feedId)
     ) { feed, episodes ->
         if (feed == null) {
