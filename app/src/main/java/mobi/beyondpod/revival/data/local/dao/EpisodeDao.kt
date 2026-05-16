@@ -281,6 +281,18 @@ interface EpisodeDao {
     """)
     suspend fun getDownloadingEpisodesForFeed(feedId: Long): List<EpisodeEntity>
 
+    // STREAM_NEWEST streaming placeholders — QUEUED episodes with no DownloadManager ID.
+    // QUEUED + null downloadId = marked for streaming (STREAM_NEWEST strategy).
+    // QUEUED + non-null downloadId = actual download waiting in DownloadManager (other strategies).
+    // This query returns only the streaming placeholders so we can clean up stale ones.
+    @Query("""
+        SELECT * FROM episodes
+        WHERE feedId = :feedId
+        AND downloadState = 'QUEUED'
+        AND downloadId IS NULL
+    """)
+    suspend fun getStreamQueuedForFeed(feedId: Long): List<EpisodeEntity>
+
     // Bulk-reset ghost DOWNLOADING rows that have no DownloadManager ID.
     // DOWNLOADING + null downloadId is definitionally unreachable — the episode was supposed
     // to get a real dmId from DownloadManager.enqueue() but never did. These are counted by

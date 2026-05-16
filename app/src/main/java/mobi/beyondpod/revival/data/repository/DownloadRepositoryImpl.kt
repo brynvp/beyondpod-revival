@@ -518,11 +518,37 @@ class DownloadRepositoryImpl @Inject constructor(
             }
 
             DownloadStrategy.STREAM_NEWEST -> {
-                // No download — mark as QUEUED for streaming (QUEUED already counted by inFlight)
-                val inFlight = episodeDao.countInFlightDownloads(feedId)
-                val slots    = (downloadLimit - inFlight).coerceAtLeast(0)
-                if (downloadCount > 0 && slots > 0) {
-                    val toQueue = episodeDao.getNotDownloadedNewest(feedId, slots)
+                // Window-based streaming management — mirrors DOWNLOAD_NEWEST/GLOBAL logic but
+                // marks episodes as QUEUED (streaming placeholder) instead of enqueuing a download.
+                //
+                // No slot arithmetic: countInFlightDownloads includes these QUEUED placeholders, which
+                // caused starvation — slots→0 after the first few refreshes. Instead, manage the window
+                // directly: clear stale placeholders, then queue whatever is still NOT_DOWNLOADED.
+
+                if (downloadCount > 0) {
+                    // Step B — clear QUEUED placeholders that have fallen out of the window.
+                    // A placeholder becomes stale when a newer episode arrives and pushes it beyond
+                    // position downloadCount by pubDate. Reset to NOT_DOWNLOADED so it's no longer
+                    // counted as in-flight and the slot is freed.
+                    val autoWindow = episodeDao.getNewestEpisodesForWindow(feedId, downloadCount)
+                    val autoIds    = autoWindow.map { it.id }.toSet()
+                    val stale      = episodeDao.getStreamQueuedForFeed(feedId)
+                    for (ep in stale) {
+                        if (ep.id !in autoIds) {
+                            Log.d(TAG, "autoDownload STREAM_NEWEST feed=$feedId ep=${ep.id} '${ep.title}' — stale placeholder, resetting to NOT_DOWNLOADED")
+                            episodeDao.updateDownloadState(ep.id, DownloadStateEnum.NOT_DOWNLOADED, null)
+                        }
+                    }
+
+                    // Step C — mark NOT_DOWNLOADED episodes in the window as QUEUED for streaming.
+                    // DELETED episodes are already excluded by getNewestEpisodesForWindow (the DAO
+                    // query filters them), so user-deleted episodes don't re-enter the window.
+                    val toQueue = autoWindow.filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED }
+                    if (toQueue.isNotEmpty()) {
+                        Log.d(TAG, "autoDownload STREAM_NEWEST feed=$feedId queuing ${toQueue.size} episode(s) for streaming (window=$downloadCount)")
+                    } else if (autoWindow.isNotEmpty()) {
+                        Log.d(TAG, "autoDownload STREAM_NEWEST feed=$feedId — window full (all ${autoWindow.size} already QUEUED or DOWNLOADED)")
+                    }
                     toQueue.forEach { ep ->
                         episodeDao.updateDownloadState(ep.id, DownloadStateEnum.QUEUED, null)
                     }
