@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -289,7 +292,7 @@ fun EpisodeListItem(
 
         Spacer(Modifier.width(4.dp))
 
-        // Right-side action column: starred indicator + three-dot menu
+        // Right-side action column: starred indicator + download state icon + three-dot menu
         Column(horizontalAlignment = Alignment.End) {
 
             // Favourite heart (shows only when starred)
@@ -301,6 +304,41 @@ fun EpisodeListItem(
                     modifier = Modifier.size(14.dp)
                 )
             }
+
+            // Download state indicator — compact icon only, no tap action here
+            val isDark = isSystemInDarkTheme()
+            when (episode.downloadState) {
+                DownloadStateEnum.DOWNLOADED -> Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "Downloaded",
+                    tint = if (isDark)
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f)
+                    else
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    modifier = Modifier.size(16.dp)
+                )
+                DownloadStateEnum.DOWNLOADING,
+                DownloadStateEnum.QUEUED -> CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                DownloadStateEnum.FAILED -> Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Download failed",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp)
+                )
+                DownloadStateEnum.NOT_DOWNLOADED -> Icon(
+                    imageVector = Icons.Default.Circle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                    modifier = Modifier.size(8.dp)
+                )
+                DownloadStateEnum.DELETED -> { /* nothing — RE-DOWNLOAD in bottom bar is enough */ }
+            }
+
+            Spacer(Modifier.height(2.dp))
 
             // Three-dot overflow menu: Delete / Share / Favourite
             // Only shown when at least one action callback is provided.
