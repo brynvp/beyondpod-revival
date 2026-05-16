@@ -460,13 +460,17 @@ class DownloadRepositoryImpl @Inject constructor(
                     }
 
                     // Step C — enqueue episodes from the target window that need downloading.
-                    // NOT_DOWNLOADED: never fetched. DELETED: were downloaded and cleaned up by
-                    // retention (or earlier buggy runs), but still rank in the top keepCount by
-                    // pubDate — they should be re-fetched. DOWNLOADING/QUEUED are already in
-                    // flight (excluded by state). DOWNLOADED already on disk (excluded).
+                    // NOT_DOWNLOADED: never fetched. DELETED: only re-queued on manual refresh —
+                    // if the user explicitly deleted an episode we don't auto-re-download it in
+                    // the DownloadCompleteReceiver chain (isManualRefresh=false), otherwise every
+                    // delete triggers an immediate re-download (ping-pong). Manual refresh still
+                    // fills DELETED slots so the window stays full when the user asks for it.
+                    // DOWNLOADING/QUEUED: already in-flight. DOWNLOADED: already on disk.
                     val toDownload = targetWindow
-                        .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED ||
-                                  it.downloadState == DownloadStateEnum.DELETED }
+                        .filter { ep ->
+                            ep.downloadState == DownloadStateEnum.NOT_DOWNLOADED ||
+                            (ep.downloadState == DownloadStateEnum.DELETED && isManualRefresh)
+                        }
                         .take(slots)
                     if (toDownload.isEmpty() && slots > 0) {
                         val allEps = episodeDao.getEpisodesForFeedList(feedId)
@@ -542,14 +546,17 @@ class DownloadRepositoryImpl @Inject constructor(
                     }
 
                     // Step C — enqueue episodes from the target window that need downloading.
-                    // NOT_DOWNLOADED: never fetched. DELETED: were previously downloaded and
-                    // cleaned up but still rank in the top keepCount by pubDate — re-fetch them.
-                    // This handles the "DELETED gap" where earlier buggy runs downloaded then
-                    // deleted episodes that are still the newest content in the DB.
+                    // NOT_DOWNLOADED: never fetched. DELETED: only re-queued on manual refresh —
+                    // if the user explicitly deleted an episode we don't auto-re-download it in
+                    // the DownloadCompleteReceiver chain (isManualRefresh=false), otherwise every
+                    // delete triggers an immediate re-download (ping-pong). Manual refresh still
+                    // fills DELETED slots so the window stays full when the user asks for it.
                     // DOWNLOADING/QUEUED: already in-flight. DOWNLOADED: already on disk.
                     val toDownload = targetWindow
-                        .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED ||
-                                  it.downloadState == DownloadStateEnum.DELETED }
+                        .filter { ep ->
+                            ep.downloadState == DownloadStateEnum.NOT_DOWNLOADED ||
+                            (ep.downloadState == DownloadStateEnum.DELETED && isManualRefresh)
+                        }
                         .take(slots)
                     if (toDownload.isEmpty() && slots > 0) {
                         val allEps = episodeDao.getEpisodesForFeedList(feedId)
