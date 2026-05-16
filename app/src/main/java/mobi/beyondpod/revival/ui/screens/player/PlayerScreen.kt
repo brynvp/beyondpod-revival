@@ -24,7 +24,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Forward30
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +71,11 @@ fun PlayerScreen(
     val description      by viewModel.episodeDescription.collectAsState()
     val currentEpisodeId by viewModel.currentEpisodeId.collectAsState()
     val pubDate          by viewModel.episodePubDate.collectAsState()
+    val hasPrev          by viewModel.hasPrev.collectAsState()
+    val hasNext          by viewModel.hasNext.collectAsState()
+    val queueIndex       by viewModel.queueIndex.collectAsState()
+    val queueSize        by viewModel.queueSize.collectAsState()
+    val playbackSpeed    by viewModel.playbackSpeed.collectAsState()
 
     var showSleepDialog  by remember { mutableStateOf(false) }
 
@@ -202,6 +210,19 @@ fun PlayerScreen(
 
         Spacer(Modifier.height(24.dp))
 
+        // Queue position indicator — only visible when playing from the queue
+        if (queueSize > 0 && queueIndex >= 0) {
+            Text(
+                text = "${queueIndex + 1} of $queueSize",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            )
+        }
+
         // ── Progress scrubber — seeks on finger-up only to avoid jank ─────────
         Column(modifier = Modifier.padding(horizontal = 24.dp)) {
             Slider(
@@ -244,6 +265,25 @@ fun PlayerScreen(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Skip to previous episode
+            IconButton(
+                onClick    = { viewModel.skipToPrev() },
+                enabled    = hasPrev,
+                modifier   = Modifier
+                    .size(48.dp)
+                    .semantics { contentDescription = "Previous episode" }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipPrevious,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (hasPrev) MaterialTheme.colorScheme.onSurface
+                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                )
+            }
+
+            Spacer(Modifier.width(4.dp))
+
             // Rewind
             IconButton(
                 onClick = { viewModel.rewind() },
@@ -258,9 +298,9 @@ fun PlayerScreen(
                 )
             }
 
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(8.dp))
 
-            // Play / Pause (large)
+            // Play / Pause (large, centred)
             Box(
                 modifier = Modifier
                     .size(72.dp)
@@ -278,7 +318,7 @@ fun PlayerScreen(
                 )
             }
 
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(8.dp))
 
             // Fast-forward
             IconButton(
@@ -291,6 +331,40 @@ fun PlayerScreen(
                     imageVector = Icons.Default.Forward30,
                     contentDescription = null,
                     modifier = Modifier.size(36.dp)
+                )
+            }
+
+            Spacer(Modifier.width(4.dp))
+
+            // Skip to next episode
+            IconButton(
+                onClick    = { viewModel.skipToNext() },
+                enabled    = hasNext,
+                modifier   = Modifier
+                    .size(48.dp)
+                    .semantics { contentDescription = "Next episode" }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipNext,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (hasNext) MaterialTheme.colorScheme.onSurface
+                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                )
+            }
+        }
+
+        // ── Playback speed control ────────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            TextButton(onClick = { viewModel.cyclePlaybackSpeed() }) {
+                Text(
+                    text = "${if (playbackSpeed == playbackSpeed.toInt().toFloat())
+                                 playbackSpeed.toInt().toString()
+                             else playbackSpeed}×",
+                    style = MaterialTheme.typography.labelMedium
                 )
             }
         }

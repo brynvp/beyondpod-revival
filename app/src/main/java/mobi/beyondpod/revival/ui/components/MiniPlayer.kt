@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -104,11 +105,20 @@ fun MiniPlayer(
                 }
             })
 
-            // Play / Pause — matches original BP mini-player (no skip button)
+            // Play / Pause
             IconButton(onClick = { viewModel.togglePlayPause() }) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = OnSurfaceDark
+                )
+            }
+
+            // Skip forward (30s) — per original BP mini-player design
+            IconButton(onClick = { viewModel.fastForward() }) {
+                Icon(
+                    imageVector = Icons.Default.Forward30,
+                    contentDescription = "Fast forward",
                     tint = OnSurfaceDark
                 )
             }

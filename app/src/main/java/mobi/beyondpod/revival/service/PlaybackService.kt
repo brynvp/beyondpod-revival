@@ -107,6 +107,13 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_REWIND          = "mobi.beyondpod.revival.REWIND"
         const val ACTION_FAST_FORWARD    = "mobi.beyondpod.revival.FAST_FORWARD"
 
+        /** Skip to the previous episode in the active queue snapshot.
+         *  If playback position > 5 s, restarts the current episode first (double-tap = prev). */
+        const val ACTION_PREV_EPISODE = "mobi.beyondpod.revival.PREV_EPISODE"
+
+        /** Skip to the next episode in the active queue snapshot. */
+        const val ACTION_NEXT_EPISODE = "mobi.beyondpod.revival.NEXT_EPISODE"
+
         /** Load and play a single episode. Required extra: [EXTRA_EPISODE_ID]. */
         const val ACTION_PLAY_EPISODE  = "mobi.beyondpod.revival.PLAY_EPISODE"
         const val EXTRA_EPISODE_ID     = "episode_id"
@@ -191,6 +198,8 @@ class PlaybackService : MediaSessionService() {
                 val skipSec = dataStore.data.first()[AppSettings.SKIP_FORWARD_SECONDS] ?: 30
                 activePlayer.seekTo(activePlayer.currentPosition + skipSec * 1000L)
             }
+            ACTION_PREV_EPISODE    -> serviceScope.launch { navigatePrevEpisode() }
+            ACTION_NEXT_EPISODE    -> serviceScope.launch { navigateNextEpisode() }
             ACTION_PLAY_EPISODE    -> {
                 val episodeId = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
                 if (episodeId >= 0) loadAndPlay(episodeId)
@@ -439,6 +448,45 @@ class PlaybackService : MediaSessionService() {
     private val castSessionListener = object : SessionAvailabilityListener {
         override fun onCastSessionAvailable() { switchToCast() }
         override fun onCastSessionUnavailable() { switchToLocal() }
+    }
+
+    // ── Queue navigation ──────────────────────────────────────────────────────
+
+    /**
+     * Skip to the previous episode in the queue.
+     *
+     * Classic double-tap behaviour: if more than 5 s into the current episode, the first tap
+     * restarts it (seekTo 0). Only a tap within the first 5 s actually goes back one slot.
+     * If already at index 0 and within 5 s, restarts from 0 (no wrap-around).
+     */
+    private suspend fun navigatePrevEpisode() {
+        if (activePlayer.currentPosition > 5_000L) {
+            activePlayer.seekTo(0L)
+            return
+        }
+        val snapshot = queueSnapshotDao.getActiveSnapshotOnce() ?: return
+        val items    = queueSnapshotDao.getSnapshotItemsList(snapshot.id)
+        val prevIndex = snapshot.currentItemIndex - 1
+        if (prevIndex < 0) {
+            // Already at the start — just restart the episode
+            activePlayer.seekTo(0L)
+            return
+        }
+        queueSnapshotDao.updatePlaybackPosition(index = prevIndex, positionMs = 0L)
+        loadAndPlay(items[prevIndex].episodeId)
+    }
+
+    /**
+     * Skip to the next episode in the queue.
+     * No-ops if already at the last item (no wrap-around — matches BP 4.x behaviour).
+     */
+    private suspend fun navigateNextEpisode() {
+        val snapshot  = queueSnapshotDao.getActiveSnapshotOnce() ?: return
+        val items     = queueSnapshotDao.getSnapshotItemsList(snapshot.id)
+        val nextIndex = snapshot.currentItemIndex + 1
+        if (nextIndex >= items.size) return   // end of queue — stop cleanly
+        queueSnapshotDao.updatePlaybackPosition(index = nextIndex, positionMs = 0L)
+        loadAndPlay(items[nextIndex].episodeId)
     }
 
     // ── Volume boost (LoudnessEnhancer — §7.6) ────────────────────────────────

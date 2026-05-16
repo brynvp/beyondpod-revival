@@ -21,9 +21,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import mobi.beyondpod.revival.data.local.dao.QueueSnapshotDao
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.data.settings.AppSettings
 import mobi.beyondpod.revival.service.PlaybackService
@@ -41,7 +45,8 @@ import javax.inject.Inject
 class PlaybackViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dataStore: DataStore<Preferences>,
-    private val episodeRepository: EpisodeRepository
+    private val episodeRepository: EpisodeRepository,
+    private val queueSnapshotDao: QueueSnapshotDao
 ) : ViewModel() {
 
     // ── Core playback state (MiniPlayer) ──────────────────────────────────────
@@ -84,6 +89,24 @@ class PlaybackViewModel @Inject constructor(
     private val _sleepTimerRemainingMs = MutableStateFlow(0L)
     val sleepTimerRemainingMs: StateFlow<Long> = _sleepTimerRemainingMs
 
+    // ── Queue navigation state ─────────────────────────────────────────────────
+
+    /** 0-based index of the currently playing item in the active queue snapshot. -1 if not in queue. */
+    private val _queueIndex = MutableStateFlow(-1)
+    val queueIndex: StateFlow<Int> = _queueIndex
+
+    /** Total number of items in the active queue snapshot. 0 if no active queue. */
+    private val _queueSize = MutableStateFlow(0)
+    val queueSize: StateFlow<Int> = _queueSize
+
+    /** True if there is a previous episode in the queue to skip back to. */
+    private val _hasPrev = MutableStateFlow(false)
+    val hasPrev: StateFlow<Boolean> = _hasPrev
+
+    /** True if there is a next episode in the queue to skip forward to. */
+    private val _hasNext = MutableStateFlow(false)
+    val hasNext: StateFlow<Boolean> = _hasNext
+
     // ── Internal ──────────────────────────────────────────────────────────────
 
     private var controller: MediaController? = null
@@ -92,6 +115,26 @@ class PlaybackViewModel @Inject constructor(
 
     init {
         connectController()
+
+        // Observe the active queue snapshot so prev/next/position state stays current.
+        // flatMapLatest ensures we drop the old items flow when the snapshot changes.
+        viewModelScope.launch {
+            queueSnapshotDao.getActiveSnapshot()
+                .flatMapLatest { snapshot ->
+                    if (snapshot == null) {
+                        flowOf(Triple(-1, 0, -1))   // no active queue
+                    } else {
+                        queueSnapshotDao.getSnapshotItems(snapshot.id)
+                            .map { items -> Triple(snapshot.currentItemIndex, items.size, snapshot.id) }
+                    }
+                }
+                .collect { (index, size, _) ->
+                    _queueIndex.value = index
+                    _queueSize.value  = size
+                    _hasPrev.value    = index > 0
+                    _hasNext.value    = size > 0 && index < size - 1
+                }
+        }
     }
 
     private fun connectController() {
@@ -212,6 +255,34 @@ class PlaybackViewModel @Inject constructor(
     fun setPlaybackSpeed(speed: Float) {
         controller?.setPlaybackParameters(PlaybackParameters(speed))
         _playbackSpeed.value = speed
+    }
+
+    fun skipToNext() {
+        context.startService(
+            Intent(context, PlaybackService::class.java).apply {
+                action = PlaybackService.ACTION_NEXT_EPISODE
+            }
+        )
+    }
+
+    fun skipToPrev() {
+        context.startService(
+            Intent(context, PlaybackService::class.java).apply {
+                action = PlaybackService.ACTION_PREV_EPISODE
+            }
+        )
+    }
+
+    /**
+     * Cycle through common playback speed presets.
+     * Order: 0.75× → 1.0× → 1.25× → 1.5× → 1.75× → 2.0× → 0.75× ...
+     */
+    fun cyclePlaybackSpeed() {
+        val presets = listOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+        val current = _playbackSpeed.value
+        val idx     = presets.indexOfFirst { kotlin.math.abs(it - current) < 0.01f }
+        val next    = presets[(idx + 1) % presets.size]
+        setPlaybackSpeed(next)
     }
 
     // ── Sleep timer ───────────────────────────────────────────────────────────
