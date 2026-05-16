@@ -118,12 +118,27 @@ class QueueViewModel @Inject constructor(
             // Q5 (red-team verified): find the NEW index of the currently-playing episode
             // in the reordered list. Simply preserving the old index is wrong — the playing
             // episode may have moved position during the drag, so old index → wrong episode.
-            val playingId = PlaybackStateHolder.currentlyPlayingEpisodeId
-            val newIndex = if (playingId > 0) {
-                reorderedItems.indexOfFirst { it.snapshotItem.episodeId == playingId }
-                    .takeIf { it >= 0 } ?: state.snapshot.currentItemIndex
-            } else {
-                state.snapshot.currentItemIndex
+            val newIndex = run {
+                // Prefer the live PlaybackStateHolder ID (service is running + playing).
+                val liveId = PlaybackStateHolder.currentlyPlayingEpisodeId
+                if (liveId > 0) {
+                    // Service alive — find where the playing episode landed after the reorder.
+                    reorderedItems.indexOfFirst { it.snapshotItem.episodeId == liveId }
+                        .takeIf { it >= 0 } ?: state.snapshot.currentItemIndex
+                } else {
+                    // Service dead — resolve episode identity from the snapshot cursor in the OLD
+                    // list, then find it in the new order. Avoids pointing the cursor at the wrong
+                    // episode just because an item happened to be at the old index position.
+                    val currentItems = state.items
+                    val oldIndex = state.snapshot.currentItemIndex
+                    val episodeIdAtOldIndex = currentItems.getOrNull(oldIndex)?.snapshotItem?.episodeId ?: -1L
+                    if (episodeIdAtOldIndex > 0) {
+                        reorderedItems.indexOfFirst { it.snapshotItem.episodeId == episodeIdAtOldIndex }
+                            .takeIf { it >= 0 } ?: oldIndex
+                    } else {
+                        oldIndex  // nothing to go on — keep old index as best guess
+                    }
+                }
             }
             val snapshot = state.snapshot.copy(
                 id = 0,  // replaceActiveSnapshot assigns a new ID

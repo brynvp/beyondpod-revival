@@ -2,6 +2,7 @@ package mobi.beyondpod.revival.service
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.util.Log
 import android.media.audiofx.LoudnessEnhancer
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -583,7 +584,17 @@ class PlaybackService : MediaSessionService() {
                     val snapshot = queueSnapshotDao.getActiveSnapshotOnce()
                     if (snapshot != null) {
                         val items = queueSnapshotDao.getSnapshotItemsList(snapshot.id)
-                        val currentIndex = items.indexOfFirst { it.episodeId == episodeId }
+                        // Use the snapshot cursor as primary — it is the authoritative playback
+                        // position and handles duplicate episodes correctly. Fall back to search
+                        // only if the cursor has drifted (shouldn't happen, but defensive).
+                        val snapshotIndex = snapshot.currentItemIndex
+                        val currentIndex = if (snapshotIndex in items.indices &&
+                                                items[snapshotIndex].episodeId == episodeId) {
+                            snapshotIndex
+                        } else {
+                            Log.w("BP.Playback", "Snapshot cursor mismatch: cursor=$snapshotIndex episodeId=$episodeId — falling back to search")
+                            items.indexOfFirst { it.episodeId == episodeId }
+                        }
                         if (currentIndex >= 0) {
                             // Episode was playing from the queue — advance to next queue item.
                             val nextIndex = currentIndex + 1
@@ -640,7 +651,14 @@ class PlaybackService : MediaSessionService() {
                         if (failedId <= 0) return@launch
                         val snapshot = queueSnapshotDao.getActiveSnapshotOnce() ?: return@launch
                         val items = queueSnapshotDao.getSnapshotItemsList(snapshot.id)
-                        val currentIndex = items.indexOfFirst { it.episodeId == failedId }
+                        val snapshotIndex = snapshot.currentItemIndex
+                        val currentIndex = if (snapshotIndex in items.indices &&
+                                                items[snapshotIndex].episodeId == failedId) {
+                            snapshotIndex
+                        } else {
+                            Log.w("BP.Playback", "Snapshot cursor mismatch: cursor=$snapshotIndex episodeId=$failedId — falling back to search")
+                            items.indexOfFirst { it.episodeId == failedId }
+                        }
                         if (currentIndex >= 0 && currentIndex + 1 < items.size) {
                             val nextIndex = currentIndex + 1
                             queueSnapshotDao.updatePlaybackPosition(
