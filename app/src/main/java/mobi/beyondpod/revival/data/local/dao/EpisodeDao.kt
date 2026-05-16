@@ -243,11 +243,14 @@ interface EpisodeDao {
 
     // Target download window: the keepCount newest non-archived episodes, any download state.
     // Used by GLOBAL/DOWNLOAD_NEWEST to define WHICH episodes SHOULD be on disk — the canonical
-    // "keep the Y newest" window. Any DOWNLOADED episode outside this set gets deleted; any
-    // NOT_DOWNLOADED episode inside it gets queued. This replaces the trulyNew/suppression approach.
+    // "keep the Y newest" window. DELETED episodes are intentionally excluded: a user-deleted
+    // episode should not hold a window slot and block newer content from being downloaded.
+    // Excluding DELETED means deleting ep5 causes ep6 to slide into the window automatically,
+    // so the next auto-chain call enqueues ep6 without ping-pong re-downloading ep5.
+    // (Retention-cleaned episodes are also DELETED and equally should not re-block the window.)
     @Query("""
         SELECT * FROM episodes
-        WHERE feedId = :feedId AND isArchived = 0
+        WHERE feedId = :feedId AND isArchived = 0 AND downloadState != 'DELETED'
         ORDER BY pubDate DESC, id ASC
         LIMIT :count
     """)

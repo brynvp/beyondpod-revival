@@ -459,18 +459,15 @@ class DownloadRepositoryImpl @Inject constructor(
                         episodeDao.updateDownloadState(ep.id, DownloadStateEnum.DELETED, null)
                     }
 
-                    // Step C — enqueue episodes from the target window that need downloading.
-                    // NOT_DOWNLOADED: never fetched. DELETED: only re-queued on manual refresh —
-                    // if the user explicitly deleted an episode we don't auto-re-download it in
-                    // the DownloadCompleteReceiver chain (isManualRefresh=false), otherwise every
-                    // delete triggers an immediate re-download (ping-pong). Manual refresh still
-                    // fills DELETED slots so the window stays full when the user asks for it.
-                    // DOWNLOADING/QUEUED: already in-flight. DOWNLOADED: already on disk.
+                    // Step C — enqueue NOT_DOWNLOADED episodes from the target window.
+                    // DELETED episodes never appear in targetWindow (excluded by the DAO query),
+                    // so deleting an episode causes the next newer episode to slide into the window
+                    // automatically. No ping-pong: the deleted slot is filled by new content, not
+                    // by re-downloading what the user just deleted.
+                    // DOWNLOADING/QUEUED: counted by inFlight, already excluded via slots.
+                    // DOWNLOADED: already on disk.
                     val toDownload = targetWindow
-                        .filter { ep ->
-                            ep.downloadState == DownloadStateEnum.NOT_DOWNLOADED ||
-                            (ep.downloadState == DownloadStateEnum.DELETED && isManualRefresh)
-                        }
+                        .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED }
                         .take(slots)
                     if (toDownload.isEmpty() && slots > 0) {
                         val allEps = episodeDao.getEpisodesForFeedList(feedId)
@@ -545,18 +542,15 @@ class DownloadRepositoryImpl @Inject constructor(
                         episodeDao.updateDownloadState(ep.id, DownloadStateEnum.DELETED, null)
                     }
 
-                    // Step C — enqueue episodes from the target window that need downloading.
-                    // NOT_DOWNLOADED: never fetched. DELETED: only re-queued on manual refresh —
-                    // if the user explicitly deleted an episode we don't auto-re-download it in
-                    // the DownloadCompleteReceiver chain (isManualRefresh=false), otherwise every
-                    // delete triggers an immediate re-download (ping-pong). Manual refresh still
-                    // fills DELETED slots so the window stays full when the user asks for it.
-                    // DOWNLOADING/QUEUED: already in-flight. DOWNLOADED: already on disk.
+                    // Step C — enqueue NOT_DOWNLOADED episodes from the target window.
+                    // DELETED episodes never appear in targetWindow (excluded by the DAO query),
+                    // so deleting an episode causes the next newer episode to slide into the window
+                    // automatically. No ping-pong: the deleted slot is filled by new content, not
+                    // by re-downloading what the user just deleted.
+                    // DOWNLOADING/QUEUED: counted by inFlight, already excluded via slots.
+                    // DOWNLOADED: already on disk.
                     val toDownload = targetWindow
-                        .filter { ep ->
-                            ep.downloadState == DownloadStateEnum.NOT_DOWNLOADED ||
-                            (ep.downloadState == DownloadStateEnum.DELETED && isManualRefresh)
-                        }
+                        .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED }
                         .take(slots)
                     if (toDownload.isEmpty() && slots > 0) {
                         val allEps = episodeDao.getEpisodesForFeedList(feedId)
