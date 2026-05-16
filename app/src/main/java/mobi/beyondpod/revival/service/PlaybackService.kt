@@ -129,6 +129,9 @@ class PlaybackService : MediaSessionService() {
         val pauseOnUnplug = runBlocking {
             dataStore.data.first()[AppSettings.PAUSE_ON_HEADPHONE_UNPLUG] ?: true
         }
+        val skipSilence = runBlocking {
+            dataStore.data.first()[AppSettings.SKIP_SILENCE] ?: false
+        }
 
         exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(
@@ -140,7 +143,10 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(pauseOnUnplug)
             .build()
-            .also { it.addListener(playerListener) }
+            .also { player ->
+                player.addListener(playerListener)
+                player.skipSilenceEnabled = skipSilence
+            }
 
         // CastContext may be unavailable on devices without Play Services (e.g. emulators without GMS).
         // Wrap in try/catch so the app continues to work in that environment.
@@ -335,6 +341,9 @@ class PlaybackService : MediaSessionService() {
                 exoPlayer.setMediaItem(exoItem)
                 if (episode.playPosition > 0) exoPlayer.seekTo(episode.playPosition)
                 exoPlayer.prepare()
+                // Resolve and apply volume boost: per-feed override → global setting → no boost.
+                val boostLevel = resolveVolumeBoost(feed?.playbackVolumeBoost ?: 0)
+                if (!isCasting) applyVolumeBoost(boostLevel)
                 exoPlayer.play()
             }
         }
@@ -442,7 +451,22 @@ class PlaybackService : MediaSessionService() {
      *
      * @param boostLevel 1 = no boost (0 dB), 2–10 = ~1 dB per step (max 10 dB)
      */
-    fun applyVolumeBoost(boostLevel: Int) {
+    /**
+     * Resolves the effective volume boost level for the current episode.
+     *
+     * Priority: per-feed override (if non-zero) → global DataStore setting → 1 (no boost).
+     * 0 = "use global default" on both the feed and global level means no boost (1).
+     *
+     * @param feedBoostOverride The feed's [FeedEntity.playbackVolumeBoost] value (0 = global default).
+     * @return Resolved boost level (1 = 0 dB, 2–10 = ~1 dB per step).
+     */
+    private suspend fun resolveVolumeBoost(feedBoostOverride: Int): Int {
+        if (feedBoostOverride > 0) return feedBoostOverride
+        val global = dataStore.data.first()[AppSettings.VOLUME_BOOST_GLOBAL] ?: 0
+        return if (global > 0) global else 1
+    }
+
+    private fun applyVolumeBoost(boostLevel: Int) {
         if (exoPlayer.audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
         val enhancer = loudnessEnhancer
             ?: LoudnessEnhancer(exoPlayer.audioSessionId).also { loudnessEnhancer = it }
@@ -538,7 +562,16 @@ class PlaybackService : MediaSessionService() {
                 if (currentEpisodeId > 0) startPositionSaving(currentEpisodeId)
                 // LoudnessEnhancer must be re-created when audioSessionId changes (after prepare)
                 // Only applies to ExoPlayer; skip silently when casting
-                if (!isCasting) applyVolumeBoost(1)
+                if (!isCasting) {
+                    // Re-apply volume boost after audioSessionId changes (happens after exoPlayer.prepare()).
+                    // currentEpisodeId is set before play starts — use it to look up the feed override.
+                    serviceScope.launch {
+                        val episode = if (currentEpisodeId > 0) episodeRepository.getEpisodeById(currentEpisodeId) else null
+                        val feed    = episode?.let { feedRepository.getFeedById(it.feedId) }
+                        val boost   = resolveVolumeBoost(feed?.playbackVolumeBoost ?: 0)
+                        applyVolumeBoost(boost)
+                    }
+                }
             } else {
                 stopPositionSaving()
                 // Save position immediately on pause — guard against ghost writes on deleted episodes.

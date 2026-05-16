@@ -93,6 +93,19 @@ fun SettingsScreen(
                 )
             }
             item {
+                StepperPref(
+                    title    = "Volume boost",
+                    subtitle = if (state.volumeBoostGlobal <= 0) "Off"
+                               else "+${state.volumeBoostGlobal - 1} dB",
+                    onDecrement = {
+                        if (state.volumeBoostGlobal > 0) viewModel.setVolumeBoostGlobal(state.volumeBoostGlobal - 1)
+                    },
+                    onIncrement = {
+                        if (state.volumeBoostGlobal < 10) viewModel.setVolumeBoostGlobal(state.volumeBoostGlobal + 1)
+                    }
+                )
+            }
+            item {
                 SwitchPref(
                     title   = "Pause on headphone unplug",
                     checked = state.pauseOnHeadphoneUnplug,

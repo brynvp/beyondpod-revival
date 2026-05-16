@@ -499,10 +499,18 @@ private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
             )
             SettingsRow(label = "Skip intro", value = "${feed.skipIntroSeconds}s")
             SettingsRow(label = "Skip outro", value = "${feed.skipOutroSeconds}s")
-            SettingsRow(
+            ClickableSettingsRow(
                 label = "Volume boost",
-                value = if (feed.playbackVolumeBoost == 0) "Global default"
-                        else "${feed.playbackVolumeBoost}/10"
+                value = when (feed.playbackVolumeBoost) {
+                    0    -> "Global default"
+                    1    -> "Off"
+                    else -> "+${feed.playbackVolumeBoost - 1} dB"
+                },
+                onClick = {
+                    // Cycle: 0 (global) → 1 (off) → 2 → 3 → … → 10 → back to 0
+                    val next = (feed.playbackVolumeBoost + 1) % 11
+                    viewModel.updateFeedProperties(feed.copy(playbackVolumeBoost = next))
+                }
             )
         }
 
