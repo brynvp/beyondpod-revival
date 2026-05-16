@@ -463,30 +463,31 @@ class DownloadRepositoryImpl @Inject constructor(
                 val slots    = (downloadLimit - inFlight).coerceAtLeast(0)
 
                 if (keepCount != null) {
-                    // Target window: the keepCount newest non-archived episodes (any state).
-                    // These are the episodes that SHOULD be on disk. Anything downloaded outside
-                    // this set is cleaned up; anything NOT_DOWNLOADED inside it gets queued.
-                    val targetWindow = episodeDao.getNewestEpisodesForWindow(feedId, keepCount)
-                    val targetIds    = targetWindow.map { it.id }.toSet()
+                    // Step B — keep window: top keepCount episodes are protected from deletion.
+                    // keepCount is the storage ceiling — manually downloaded extras within this
+                    // window are safe from auto-cleanup. Episodes outside the window are deleted.
+                    val keepWindow = episodeDao.getNewestEpisodesForWindow(feedId, keepCount)
+                    val keepIds    = keepWindow.map { it.id }.toSet()
 
-                    // Step B — cleanup: delete DOWNLOADED episodes outside the target window.
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
                     val playingId = PlaybackStateHolder.currentlyPlayingEpisodeId
                     for (ep in allDownloaded) {
-                        if (ep.id in targetIds) continue       // belongs in window — keep
-                        if (ep.id == playingId) continue       // Q9: never delete playing episode
+                        if (ep.id in keepIds) continue       // within keepCount window — keep
+                        if (ep.id == playingId) continue     // Q9: never delete playing episode
                         ep.localFilePath?.let { File(it).delete() }
                         episodeDao.updateDownloadState(ep.id, DownloadStateEnum.DELETED, null)
                     }
 
-                    // Step C — enqueue NOT_DOWNLOADED episodes from the target window.
-                    // DELETED episodes never appear in targetWindow (excluded by the DAO query),
-                    // so deleting an episode causes the next newer episode to slide into the window
-                    // automatically. No ping-pong: the deleted slot is filled by new content, not
-                    // by re-downloading what the user just deleted.
-                    // DOWNLOADING/QUEUED: counted by inFlight, already excluded via slots.
-                    // DOWNLOADED: already on disk.
-                    val toDownload = targetWindow
+                    // Step C — auto window: top downloadCount episodes are auto-managed.
+                    // CRITICAL: Use downloadCount (not keepCount) to size the download target.
+                    // If we used keepCount here, DownloadCompleteReceiver chaining would fill all
+                    // keepCount slots regardless of downloadCount — the user's auto-download cap
+                    // would be silently ignored. With downloadCount as the window size, chaining
+                    // stops as soon as the top downloadCount episodes are all DOWNLOADED.
+                    // DELETED episodes never appear in autoWindow (excluded by the DAO query) —
+                    // deleting an episode causes the next newer episode to slide in automatically.
+                    val autoWindow = episodeDao.getNewestEpisodesForWindow(feedId, downloadCount)
+                    val toDownload = autoWindow
                         .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED }
                         .take(slots)
                     if (toDownload.isEmpty() && slots > 0) {
@@ -542,34 +543,31 @@ class DownloadRepositoryImpl @Inject constructor(
                 Log.d(TAG, "autoDownload GLOBAL feed=$feedId inFlight=$inFlight slots=$slots downloadCount=$downloadCount")
 
                 if (keepCount != null) {
-                    // Target window: the keepCount newest non-archived episodes (any state).
-                    // This defines the canonical "keep the Y newest" window. The window is based
-                    // on pubDate rank, not on what happens to be downloaded — so old backlog
-                    // episodes that snuck into the window are automatically displaced on the next
-                    // refresh when the correct newer episodes appear in the target set.
-                    val targetWindow = episodeDao.getNewestEpisodesForWindow(feedId, keepCount)
-                    val targetIds    = targetWindow.map { it.id }.toSet()
+                    // Step B — keep window: top keepCount episodes are protected from deletion.
+                    // keepCount is the storage ceiling — manually downloaded extras within this
+                    // window are safe from auto-cleanup. Episodes outside the window are deleted.
+                    val keepWindow = episodeDao.getNewestEpisodesForWindow(feedId, keepCount)
+                    val keepIds    = keepWindow.map { it.id }.toSet()
 
-                    // Step B — cleanup: delete DOWNLOADED episodes that fall outside the target
-                    // window. These are episodes whose pubDate rank has been displaced by newer
-                    // content — they should not remain on disk.
                     val allDownloaded = episodeDao.getAllDownloadedNonProtected(feedId)
                     val playingId = PlaybackStateHolder.currentlyPlayingEpisodeId
                     for (ep in allDownloaded) {
-                        if (ep.id in targetIds) continue       // belongs in window — keep
-                        if (ep.id == playingId) continue       // Q9: never delete playing episode
+                        if (ep.id in keepIds) continue       // within keepCount window — keep
+                        if (ep.id == playingId) continue     // Q9: never delete playing episode
                         ep.localFilePath?.let { File(it).delete() }
                         episodeDao.updateDownloadState(ep.id, DownloadStateEnum.DELETED, null)
                     }
 
-                    // Step C — enqueue NOT_DOWNLOADED episodes from the target window.
-                    // DELETED episodes never appear in targetWindow (excluded by the DAO query),
-                    // so deleting an episode causes the next newer episode to slide into the window
-                    // automatically. No ping-pong: the deleted slot is filled by new content, not
-                    // by re-downloading what the user just deleted.
-                    // DOWNLOADING/QUEUED: counted by inFlight, already excluded via slots.
-                    // DOWNLOADED: already on disk.
-                    val toDownload = targetWindow
+                    // Step C — auto window: top downloadCount episodes are auto-managed.
+                    // CRITICAL: Use downloadCount (not keepCount) to size the download target.
+                    // If we used keepCount here, DownloadCompleteReceiver chaining would fill all
+                    // keepCount slots regardless of downloadCount — the user's auto-download cap
+                    // would be silently ignored. With downloadCount as the window size, chaining
+                    // stops as soon as the top downloadCount episodes are all DOWNLOADED.
+                    // DELETED episodes never appear in autoWindow (excluded by the DAO query) —
+                    // deleting an episode causes the next newer episode to slide in automatically.
+                    val autoWindow = episodeDao.getNewestEpisodesForWindow(feedId, downloadCount)
+                    val toDownload = autoWindow
                         .filter { it.downloadState == DownloadStateEnum.NOT_DOWNLOADED }
                         .take(slots)
                     if (toDownload.isEmpty() && slots > 0) {
@@ -578,7 +576,7 @@ class DownloadRepositoryImpl @Inject constructor(
                         val archived = allEps.count { it.isArchived }
                         Log.d(TAG, "autoDownload DIAG GLOBAL feed=$feedId total=${allEps.size} archived=$archived states=$states")
                     } else {
-                        Log.d(TAG, "autoDownload GLOBAL feed=$feedId toDownload=${toDownload.size} targetWindow=${targetWindow.size}")
+                        Log.d(TAG, "autoDownload GLOBAL feed=$feedId toDownload=${toDownload.size} autoWindow=${autoWindow.size} keepWindow=${keepWindow.size}")
                     }
                     toDownload.forEach { ep -> enqueueDownload(ep.id, mobileAllowed) }
                 } else {
