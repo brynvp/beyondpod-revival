@@ -12,7 +12,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.FeedDao
 import mobi.beyondpod.revival.data.local.entity.DownloadStateEnum
@@ -33,6 +36,10 @@ class DownloadRepositoryImpl @Inject constructor(
     private val dataStore: DataStore<Preferences>,
     private val okHttpClient: okhttp3.OkHttpClient
 ) : DownloadRepository {
+
+    // Per-feed mutex — prevents concurrent autoDownloadNewEpisodes calls for the same feed
+    // from double-enqueuing episodes. ConcurrentHashMap is thread-safe for getOrPut.
+    private val feedDownloadLocks = ConcurrentHashMap<Long, Mutex>()
 
     /**
      * Follow HTTP redirects via OkHttp and return the final resolved URL.
@@ -344,6 +351,16 @@ class DownloadRepositoryImpl @Inject constructor(
         episodeDao.updateDownloadState(episodeId, DownloadStateEnum.NOT_DOWNLOADED, null)
     }
 
+    override suspend fun cancelFeedDownloads(feedId: Long) {
+        val inFlight = episodeDao.getDownloadingEpisodesForFeed(feedId)
+        val dmIds = inFlight.mapNotNull { it.downloadId }.toLongArray()
+        if (dmIds.isNotEmpty()) downloadManager.remove(*dmIds)
+        for (ep in inFlight) {
+            episodeDao.updateDownloadState(ep.id, DownloadStateEnum.NOT_DOWNLOADED, null)
+        }
+        Log.d(TAG, "cancelFeedDownloads feed=$feedId — cancelled ${inFlight.size} in-flight downloads")
+    }
+
     override fun getDownloadedEpisodes(): Flow<List<EpisodeEntity>> =
         episodeDao.getDownloadedEpisodes()
 
@@ -400,6 +417,7 @@ class DownloadRepositoryImpl @Inject constructor(
      * isProtected episodes are NEVER deleted (rule #4, enforced by DAO query).
      */
     override suspend fun autoDownloadNewEpisodes(feedId: Long, isManualRefresh: Boolean, mobileAllowed: Boolean) {
+        feedDownloadLocks.getOrPut(feedId) { Mutex() }.withLock {
         val feed = feedDao.getFeedById(feedId) ?: run {
             Log.w(TAG, "autoDownload feed=$feedId — feed not found, skipping")
             return
@@ -569,6 +587,7 @@ class DownloadRepositoryImpl @Inject constructor(
                 }
             }
         }
+        } // end feedDownloadLocks.withLock
     }
 
     /**

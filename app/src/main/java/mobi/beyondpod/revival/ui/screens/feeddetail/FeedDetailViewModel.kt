@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mobi.beyondpod.revival.data.local.entity.CategoryEntity
+import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
 import mobi.beyondpod.revival.data.repository.CategoryRepository
@@ -158,6 +159,15 @@ class FeedDetailViewModel @Inject constructor(
     fun updateFeedProperties(feed: FeedEntity) {
         viewModelScope.launch {
             val existing = feedRepository.getFeedById(feedId)
+            // If switching TO MANUAL — cancel all in-flight downloads for this feed.
+            // MANUAL = the user owns all download decisions; no automated activity should continue.
+            if (existing != null &&
+                existing.downloadStrategy != DownloadStrategy.MANUAL &&
+                feed.downloadStrategy == DownloadStrategy.MANUAL) {
+                withContext(Dispatchers.IO) {
+                    downloadRepository.cancelFeedDownloads(feed.id)
+                }
+            }
             feedRepository.updateFeedProperties(feed)
             // Immediate cleanup when keepCount is reduced (or newly set from unlimited)
             val oldKeep = existing?.maxEpisodesToKeep

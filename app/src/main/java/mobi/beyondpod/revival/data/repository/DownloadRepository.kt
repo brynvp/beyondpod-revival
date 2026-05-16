@@ -10,6 +10,14 @@ interface DownloadRepository {
     /** Cancel an in-progress or queued download. */
     suspend fun cancelDownload(episodeId: Long)
 
+    /**
+     * Cancel all in-flight (DOWNLOADING or QUEUED) downloads for a feed.
+     * Resets affected episodes to NOT_DOWNLOADED so they can be manually
+     * re-enqueued later. isProtected episodes are skipped (they cannot be
+     * force-cancelled by strategy logic — user must manually manage them).
+     */
+    suspend fun cancelFeedDownloads(feedId: Long)
+
     fun getDownloadedEpisodes(): Flow<List<EpisodeEntity>>
 
     /**
