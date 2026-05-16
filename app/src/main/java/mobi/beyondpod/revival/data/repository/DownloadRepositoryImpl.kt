@@ -405,6 +405,52 @@ class DownloadRepositoryImpl @Inject constructor(
         Log.d(TAG, "cancelFeedDownloads feed=$feedId — cancelled ${inFlight.size} in-flight downloads")
     }
 
+    /**
+     * Delete podcast storage folders that no longer correspond to any known feed.
+     *
+     * When a feed is deleted and re-added, it receives a new feedId and a new folder.
+     * The old podcasts/{oldFeedId}/ directory is never automatically cleaned up.
+     * This scan compares all directories under podcasts/ against known feedIds in the DB
+     * and removes any orphan.
+     *
+     * 24-hour safety buffer: directories created within the last 24 hours are skipped.
+     * This prevents a race where a feed was just subscribed but the first download hasn't
+     * yet created any files (the folder may be created by enqueueDownload before the
+     * feed row is fully committed in some edge cases).
+     */
+    private suspend fun scrubOrphanedPodcastFolders() {
+        val knownFeedIds = feedDao.getAllFeedsList().map { it.id.toString() }.toSet()
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val podcastsDir = File(baseDir, "podcasts")
+        if (!podcastsDir.exists() || !podcastsDir.isDirectory) return
+
+        val cutoffMs = System.currentTimeMillis() - 24L * 3600L * 1000L  // 24h safety buffer
+        var foldersDeleted = 0
+        var bytesReclaimed = 0L
+
+        podcastsDir.listFiles()?.forEach { dir ->
+            if (!dir.isDirectory) return@forEach                    // skip stray files
+            if (dir.name in knownFeedIds) return@forEach            // known feed — keep
+            if (dir.lastModified() > cutoffMs) return@forEach       // too recent — skip (race guard)
+
+            // Calculate size before deleting for logging
+            val bytes = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            val deleted = dir.deleteRecursively()
+            if (deleted) {
+                Log.i(TAG, "scrubOrphanedFolders: deleted orphan '${dir.name}' (${bytes / 1024}KB reclaimed)")
+                foldersDeleted++
+                bytesReclaimed += bytes
+            } else {
+                Log.w(TAG, "scrubOrphanedFolders: failed to delete orphan '${dir.name}' — may be in use")
+            }
+        }
+
+        if (foldersDeleted > 0) {
+            Log.i(TAG, "scrubOrphanedFolders: removed $foldersDeleted folder(s), " +
+                "${bytesReclaimed / 1024 / 1024}MB reclaimed")
+        }
+    }
+
     override fun getDownloadedEpisodes(): Flow<List<EpisodeEntity>> =
         episodeDao.getDownloadedEpisodes()
 
@@ -701,6 +747,11 @@ class DownloadRepositoryImpl @Inject constructor(
                 totalDeleted++
             }
         }
+
+        // Scavenge orphaned podcast folders (feeds deleted and re-added get new feedIds,
+        // leaving old podcasts/{oldFeedId}/ directories on disk with no DB reference).
+        scrubOrphanedPodcastFolders()
+
         return totalDeleted
     }
 }
