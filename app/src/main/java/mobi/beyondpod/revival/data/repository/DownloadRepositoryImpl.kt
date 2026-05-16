@@ -23,10 +23,14 @@ import mobi.beyondpod.revival.data.local.entity.DownloadStrategy
 import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.settings.AppSettings
 import mobi.beyondpod.revival.service.PlaybackStateHolder
+import android.os.StatFs
 import java.io.File
 import javax.inject.Inject
 
 private const val TAG = "BP.Download"
+
+/** Minimum free storage required before starting a download (50 MB). */
+private const val MIN_FREE_BYTES_FOR_DOWNLOAD = 50L * 1024L * 1024L
 
 class DownloadRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -227,6 +231,30 @@ class DownloadRepositoryImpl @Inject constructor(
                 episodeDao.updateDownloadState(episode.id, DownloadStateEnum.NOT_DOWNLOADED, null)
             }
         }
+
+        // Reconcile DOWNLOADED episodes whose local file no longer exists.
+        // Happens when the user clears app storage externally (Android Settings, file manager).
+        // Reset these to NOT_DOWNLOADED so they can be re-downloaded automatically.
+        // Protected episodes are skipped — getAllDownloadedNonProtected excludes isProtected=1.
+        val downloaded = episodeDao.getAllDownloadedNonProtected(feedId)
+        var missingCount = 0
+        for (ep in downloaded) {
+            val path = ep.localFilePath ?: run {
+                // DOWNLOADED but no path — data inconsistency; reset so it can be re-fetched
+                Log.w(TAG, "reconcile: episode=${ep.id} '${ep.title}' — DOWNLOADED with null localFilePath, resetting")
+                episodeDao.updateDownloadState(ep.id, DownloadStateEnum.NOT_DOWNLOADED, null)
+                missingCount++
+                continue
+            }
+            if (!File(path).exists()) {
+                Log.w(TAG, "reconcile: episode=${ep.id} '${ep.title}' — file missing at $path, resetting to NOT_DOWNLOADED")
+                episodeDao.updateDownloadState(ep.id, DownloadStateEnum.NOT_DOWNLOADED, null)
+                missingCount++
+            }
+        }
+        if (missingCount > 0) {
+            Log.w(TAG, "reconcile: feed=$feedId — reset $missingCount DOWNLOADED episode(s) with missing files")
+        }
     }
 
     /**
@@ -313,6 +341,22 @@ class DownloadRepositoryImpl @Inject constructor(
             DownloadManager.Request.NETWORK_WIFI
         else
             DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
+
+        // Pre-flight: check available disk space.
+        // DownloadManager fails silently when the disk fills mid-transfer, leaving the episode stuck
+        // in DOWNLOADING until the next reconcile. Better to fail fast with a clear state change.
+        val availableBytes = try {
+            val stat = StatFs(outputFile.parentFile?.absolutePath ?: context.filesDir.absolutePath)
+            stat.availableBlocksLong * stat.blockSizeLong
+        } catch (e: Exception) {
+            Long.MAX_VALUE  // can't determine — proceed and let DownloadManager handle it
+        }
+        if (availableBytes < MIN_FREE_BYTES_FOR_DOWNLOAD) {
+            val availableMb = availableBytes / (1024L * 1024L)
+            Log.w(TAG, "enqueue[$episodeId] SKIPPED — insufficient storage: ${availableMb}MB free (need ${MIN_FREE_BYTES_FOR_DOWNLOAD / 1024 / 1024}MB)")
+            episodeDao.updateDownloadState(episodeId, DownloadStateEnum.FAILED, null)
+            return
+        }
 
         // Resolve redirect chain before handing to DownloadManager.
         // DownloadManager caps at 5 redirects; podcast tracking URLs (podtrac, podsights,
