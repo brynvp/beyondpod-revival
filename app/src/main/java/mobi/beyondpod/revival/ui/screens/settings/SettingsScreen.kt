@@ -163,8 +163,12 @@ fun SettingsScreen(
             }
             item {
                 ListPref(
-                    title    = "Auto-download count (per feed)",
-                    subtitle = if (state.globalDownloadCount == 0) "Disabled" else state.globalDownloadCount.toString(),
+                    title    = "Download latest (per feed)",
+                    subtitle = when (state.globalDownloadCount) {
+                        0    -> "Disabled"
+                        1    -> "Always keep 1 episode"
+                        else -> "Always keep ${state.globalDownloadCount} episodes"
+                    },
                     options  = listOf(0, 1, 3, 5, 10, 20),
                     current  = state.globalDownloadCount,
                     label    = { if (it == 0) "Disabled" else it.toString() },
@@ -173,8 +177,12 @@ fun SettingsScreen(
             }
             item {
                 ListPref(
-                    title    = "Keep downloaded episodes",
-                    subtitle = if (state.globalMaxKeep == 0) "Keep all" else state.globalMaxKeep.toString(),
+                    title    = "Keep at most (per feed)",
+                    subtitle = when (state.globalMaxKeep) {
+                        0    -> "No limit"
+                        1    -> "1 episode (auto + manual)"
+                        else -> "${state.globalMaxKeep} episodes (auto + manual)"
+                    },
                     options  = listOf(0, 1, 3, 5, 10, 20, 50),
                     current  = state.globalMaxKeep,
                     label    = { if (it == 0) "Keep all" else it.toString() },

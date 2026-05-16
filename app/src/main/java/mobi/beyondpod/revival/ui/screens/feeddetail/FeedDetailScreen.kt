@@ -442,10 +442,15 @@ private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
                 onClick = { showStrategyDialog = true }
             )
 
-            // Episodes to download — tap to cycle
+            // Download latest — tap to cycle
             ClickableSettingsRow(
-                label = "Episodes to download",
-                value = feed.downloadCount?.toString() ?: "Global default",
+                label = "Download latest",
+                value = when (feed.downloadCount) {
+                    null -> "Global default"
+                    0    -> "Disabled"
+                    1    -> "Always keep 1"
+                    else -> "Always keep ${feed.downloadCount}"
+                },
                 onClick = {
                     val idx = downloadCountOptions.indexOf(feed.downloadCount)
                     val next = downloadCountOptions[(idx + 1) % downloadCountOptions.size]
@@ -453,13 +458,14 @@ private fun SettingsTab(feed: FeedEntity, viewModel: FeedDetailViewModel) {
                 }
             )
 
-            // Episodes to keep — tap to cycle
+            // Keep at most — tap to cycle
             ClickableSettingsRow(
-                label = "Episodes to keep",
+                label = "Keep at most",
                 value = when (feed.maxEpisodesToKeep) {
                     null -> "Global default"
-                    0    -> "Keep all"
-                    else -> feed.maxEpisodesToKeep.toString()
+                    0    -> "No limit"
+                    1    -> "1 total (auto + manual)"
+                    else -> "${feed.maxEpisodesToKeep} total (auto + manual)"
                 },
                 onClick = {
                     val idx = keepCountOptions.indexOf(feed.maxEpisodesToKeep)

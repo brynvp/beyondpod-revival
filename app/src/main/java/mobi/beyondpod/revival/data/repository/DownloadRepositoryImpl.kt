@@ -432,10 +432,12 @@ class DownloadRepositoryImpl @Inject constructor(
         val effectiveStrategy = feed.downloadStrategy
         val keepCount = effectiveKeepCount(feed.maxEpisodesToKeep)
         val downloadCount = effectiveDownloadCount(feed.downloadCount)
-        val downloadLimit = when {
-            isManualRefresh -> keepCount ?: Int.MAX_VALUE
-            else            -> downloadCount
-        }
+        // downloadCount is always the per-cycle cap — respected for both background and manual
+        // refresh. The user set this value for bandwidth/storage reasons; a manual tap should
+        // not override it by silently downloading up to keepCount instead.
+        // keepCount is the storage ceiling, enforced independently by Step B cleanup.
+        // isManualRefresh is kept in the log for debugging but no longer affects download cap.
+        val downloadLimit = downloadCount
         val inFlightCheck = episodeDao.countInFlightDownloads(feedId)
         val slots = (downloadLimit - inFlightCheck).coerceAtLeast(0)
         Log.d(TAG, "autoDownload feed=$feedId '${feed.title}' strategy=$effectiveStrategy manual=$isManualRefresh " +
