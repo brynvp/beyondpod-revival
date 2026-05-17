@@ -1,16 +1,20 @@
 package mobi.beyondpod.revival.ui.screens.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -18,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,12 +33,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +56,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import mobi.beyondpod.revival.data.repository.PodcastSearchResult
+import mobi.beyondpod.revival.ui.navigation.Screen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,10 +64,28 @@ fun PodcastSearchScreen(
     navController: NavController,
     viewModel: PodcastSearchViewModel = hiltViewModel()
 ) {
-    val uiState        by viewModel.uiState.collectAsState()
+    val uiState         by viewModel.uiState.collectAsState()
     val subscribedUrls  by viewModel.subscribedUrls.collectAsState()
     val subscribingUrls by viewModel.subscribingUrls.collectAsState()
-    val keyboard       = LocalSoftwareKeyboardController.current
+    val categories      by viewModel.categories.collectAsState()
+    val pendingFeedId   by viewModel.pendingCategoryFeedId.collectAsState()
+    val keyboard        = LocalSoftwareKeyboardController.current
+
+    // Local state drives the dialog — same isolated-recomposition pattern as AddFeedScreen.
+    var pendingCategoryFeedId by remember { mutableStateOf<Long?>(null) }
+    var newCategoryName       by remember { mutableStateOf("") }
+
+    val predefinedCategories = listOf(
+        "Science", "History", "Comedy", "Crime", "True Crime",
+        "Technology", "Business", "News", "Sports", "Entertainment",
+        "Society & Culture", "Health", "Education", "Politics",
+        "Arts", "Music", "Kids & Family", "Fiction", "Self-Improvement"
+    )
+
+    // Mirror the VM's pendingFeedId into local state so dialog recompositions are isolated.
+    LaunchedEffect(pendingFeedId) {
+        pendingCategoryFeedId = pendingFeedId
+    }
 
     fun doSearch() {
         keyboard?.hide()
@@ -144,6 +173,114 @@ fun PodcastSearchScreen(
                 }
             }
         }
+    }
+
+    // Category picker dialog — shown after a subscribe completes.
+    if (pendingCategoryFeedId != null) {
+        val feedId = pendingCategoryFeedId!!
+        val unusedSuggestions = predefinedCategories.filter { suggestion ->
+            categories.none { it.name.equals(suggestion, ignoreCase = true) }
+        }
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.skipCategory()
+                newCategoryName = ""
+            },
+            title = { Text("Add to a category?") },
+            text = {
+                Column {
+                    if (categories.isNotEmpty()) {
+                        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                            items(categories) { category ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.assignCategoryAndProceed(feedId, category.id)
+                                            newCategoryName = ""
+                                            navController.navigate(
+                                                Screen.FeedEpisodes.createRoute(feedId)
+                                            ) {
+                                                popUpTo(Screen.PodcastSearch.route) {
+                                                    inclusive = true
+                                                }
+                                            }
+                                        }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp)
+                                ) {
+                                    Text(text = category.name, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    }
+
+                    Text(
+                        "Create new",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+
+                    if (unusedSuggestions.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(unusedSuggestions.size) { index ->
+                                SuggestionChip(
+                                    onClick = {
+                                        viewModel.createCategoryAndProceed(feedId, unusedSuggestions[index])
+                                        newCategoryName = ""
+                                        navController.navigate(
+                                            Screen.FeedEpisodes.createRoute(feedId)
+                                        ) {
+                                            popUpTo(Screen.PodcastSearch.route) { inclusive = true }
+                                        }
+                                    },
+                                    label = { Text(unusedSuggestions[index]) }
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = newCategoryName,
+                            onValueChange = { newCategoryName = it },
+                            placeholder = { Text("Category name") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = {
+                                if (newCategoryName.isNotBlank()) {
+                                    viewModel.createCategoryAndProceed(feedId, newCategoryName)
+                                    newCategoryName = ""
+                                    navController.navigate(
+                                        Screen.FeedEpisodes.createRoute(feedId)
+                                    ) {
+                                        popUpTo(Screen.PodcastSearch.route) { inclusive = true }
+                                    }
+                                }
+                            },
+                            enabled = newCategoryName.isNotBlank()
+                        ) { Text("Add") }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.skipCategory()
+                    newCategoryName = ""
+                    navController.navigate(Screen.FeedEpisodes.createRoute(feedId)) {
+                        popUpTo(Screen.PodcastSearch.route) { inclusive = true }
+                    }
+                }) { Text("Skip") }
+            }
+        )
     }
 }
 

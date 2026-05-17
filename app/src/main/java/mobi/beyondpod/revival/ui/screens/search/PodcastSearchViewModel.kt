@@ -12,10 +12,16 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import mobi.beyondpod.revival.data.local.entity.CategoryEntity
+import mobi.beyondpod.revival.data.repository.CategoryRepository
 import mobi.beyondpod.revival.data.repository.PodcastSearchRepository
 import mobi.beyondpod.revival.data.repository.PodcastSearchResult
+import mobi.beyondpod.revival.domain.usecase.category.CreateCategoryUseCase
+import mobi.beyondpod.revival.domain.usecase.feed.MoveFeedToCategoryUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.SubscribeToFeedUseCase
 import mobi.beyondpod.revival.service.FeedUpdateWorker
 import javax.inject.Inject
@@ -31,6 +37,9 @@ sealed interface PodcastSearchUiState {
 class PodcastSearchViewModel @Inject constructor(
     private val searchRepository: PodcastSearchRepository,
     private val subscribeToFeedUseCase: SubscribeToFeedUseCase,
+    private val categoryRepository: CategoryRepository,
+    private val createCategoryUseCase: CreateCategoryUseCase,
+    private val moveFeedToCategoryUseCase: MoveFeedToCategoryUseCase,
     private val workManager: WorkManager
 ) : ViewModel() {
 
@@ -47,6 +56,18 @@ class PodcastSearchViewModel @Inject constructor(
     /** feedUrls where a subscribe coroutine is currently in-flight — disables the button. */
     private val _subscribingUrls = MutableStateFlow<Set<String>>(emptySet())
     val subscribingUrls: StateFlow<Set<String>> = _subscribingUrls
+
+    /** All user categories — drives the category picker dialog. */
+    val categories: StateFlow<List<CategoryEntity>> =
+        categoryRepository.getAllCategories()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Non-null while the category picker dialog should be shown.
+     * Set after a successful subscribe; cleared after category is assigned or skipped.
+     */
+    private val _pendingCategoryFeedId = MutableStateFlow<Long?>(null)
+    val pendingCategoryFeedId: StateFlow<Long?> = _pendingCategoryFeedId
 
     fun onQueryChange(value: String) {
         query = value
@@ -82,11 +103,37 @@ class PodcastSearchViewModel @Inject constructor(
                     .onSuccess { feed ->
                         _subscribedUrls.value = _subscribedUrls.value + feedUrl
                         enqueueImmediateRefresh(feed.id)
+                        // Trigger category dialog — same pattern as AddFeedViewModel.
+                        _pendingCategoryFeedId.value = feed.id
                     }
                 // silently ignore duplicate-subscribe (subscribeToFeed returns existing record)
             } finally {
                 _subscribingUrls.value = _subscribingUrls.value - feedUrl
             }
+        }
+    }
+
+    /** Skip category assignment — dismiss dialog without assigning. */
+    fun skipCategory() {
+        _pendingCategoryFeedId.value = null
+    }
+
+    /** Assign an existing category then dismiss dialog. */
+    fun assignCategoryAndProceed(feedId: Long, categoryId: Long?) {
+        viewModelScope.launch {
+            moveFeedToCategoryUseCase(feedId, categoryId)
+            _pendingCategoryFeedId.value = null
+        }
+    }
+
+    /** Create a new category, assign it, then dismiss dialog. */
+    fun createCategoryAndProceed(feedId: Long, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            val newId = createCategoryUseCase(CategoryEntity(name = trimmed))
+            moveFeedToCategoryUseCase(feedId, newId)
+            _pendingCategoryFeedId.value = null
         }
     }
 
