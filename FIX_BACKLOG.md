@@ -4,6 +4,78 @@
 > session prompt. Groups are ordered so every fix has its dependencies satisfied first.
 > Copy each prompt block and paste into the Claude Code CLI from H:\Git\Beyondpod.
 
+---
+
+## 🔴 Current Open Bugs (priority order for next sprint)
+
+| # | ID | Description | Commit Prompt | Status |
+|---|----|-------------|---------------|--------|
+| 1 | #17 | STREAM_NEWEST slot starvation — QUEUED placeholders accumulate, slots→0, streaming broken | `COMMIT_PROMPT_v1.0.18.md` | ✅ Done |
+| 2 | New | Missing-file reconciliation — DOWNLOADED episodes whose local file was deleted externally stay stuck | `COMMIT_PROMPT_v1.0.19.md` | ✅ Done |
+| 3 | New | Storage quota pre-flight — no free-space check before enqueuing download; silent failure on full disk | `COMMIT_PROMPT_v1.0.19.md` | ✅ Done |
+| 4 | #1.5 | Orphaned file scavenger — old `podcasts/{feedId}/` folders not cleaned after feed re-add with new feedId | `COMMIT_PROMPT_v1.0.20.md` | ✅ Done |
+| 5 | #22 | `resolveRedirects` inside BroadcastReceiver — 10s `goAsync()` limit; risk on slow networks | Deferred | Architectural |
+| 6 | #Q-crash | QueueScreen crashes on second navigation — works first open, crashes on re-entry. Likely `rememberReorderableLazyListState` or `SwipeToDismissBox` not resetting between compositions. Needs logcat to confirm. | TBD | 🔴 Open |
+| 7 | #Q-add | No "Add to queue" in episode list — three-dot menu has Delete/Favourite/Share but not queue. Only way to populate queue is Play from Smart Playlist or backup restore. Add `onAddToQueueClick` to `EpisodeListItem` + append to active snapshot via `QueueSnapshotDao`. | TBD | 🟡 Open |
+
+### #1.5 — Orphaned folder scavenger (design note)
+When a feed is deleted and re-added, it gets a new `feedId` and a new storage folder. The old
+`podcasts/{oldFeedId}/` folder remains on disk indefinitely. Fix approach: in `runGlobalRetentionCleanup()`
+or a dedicated scheduled WorkManager job, list all directories under `podcasts/`, compare against
+`feedDao.getAllFeedsList().map { it.id.toString() }`, and delete any directory whose name isn't a
+known feedId. Safe guard: only delete directories older than 24h (avoids race with a subscribe in progress).
+
+### #22 — goAsync architectural decision
+`DownloadCompleteReceiver` calls `autoDownloadNewEpisodes` which calls `resolveRedirects` (OkHttp network
+call) within the receiver's 10s window. On slow networks this could be killed by the OS. Real fix:
+replace the direct call chain with a `DownloadChainWorker` (WorkManager, expedited) enqueued from the
+receiver. The receiver just triggers the worker in <10ms and returns. Worker handles the full chain
+including redirect resolution. Deferred — real-world failure rate is low (most redirects resolve in <1s).
+
+---
+
+## 📋 New Items from External Edge-Case Review (2026-05-16)
+
+Items surfaced by GPT external audit of `have_you_thought_of_podcast_player.md`. Cross-referenced
+against existing implementation. Items below are the genuine gaps.
+
+| Priority | Item | Status |
+|----------|------|--------|
+| ✅ Done | Redirect chains (HEAD→GET via OkHttp) | v1.0.x |
+| ✅ Done | Concurrent same-episode duplicates (per-feed Mutex) | v1.0.14 |
+| ✅ Done | Background downloads (DownloadManager, Doze-exempt) | v1.0.7 |
+| ✅ Done | Crash recovery / ghost downloads (reconcileStalledDownloads) | v1.0.5-6 |
+| ✅ Done | Filename collisions (episodeId suffix in path) | v1.0.9 |
+| ✅ Done | Download state machine (6 explicit states) | Phase 1 |
+| ✅ Done | Duplicate GUIDs / multi-key dedup | Phase 1 |
+| ✅ Done | isProtected absolute veto on auto-delete | Phase 1 |
+| ✅ Done | Unicode filename sanitisation | Phase 3 |
+| 🔴 **High** | Storage quota check before download — silent fail on full disk | v1.0.19 |
+| 🔴 **High** | External file deletion → DB reconciliation (file missing, DB says DOWNLOADED) | v1.0.19 |
+| 🟡 **Medium** | Orphaned file/folder scavenger | Backlog #1.5 |
+| 🟡 **Medium** | Atomic writes — DownloadManager likely handles `.tmp` rename internally; needs verification | Low risk, deferred |
+| 🟢 **Low** | HTTPS enforcement — warn on `http://` feed URLs at subscribe time | Future |
+| 🟢 **Low** | Storage usage per-podcast reporting | Future |
+| ⬛ Out of scope | Progressive playback from partial file | Not in BeyondPod 4.x scope |
+| ⬛ Out of scope | Chapter markers (ID3 CHAP) | Not in v1.0 scope |
+| ⬛ Out of scope | VBR duration correction | ExoPlayer handles at scan time |
+| ⬛ Out of scope | SD card unmount handling | Min SDK 26, uncommon scenario |
+| ⬛ Out of scope | iCloud/GDrive offload | Using getExternalFilesDir (app-private) |
+
+---
+
+## Recent Beta Fixes
+
+| Version | Fix | Date |
+|---------|-----|------|
+| v1.0.13 | `getNewestEpisodesForWindow` excludes DELETED — no more ping-pong re-download | 2026-05-16 |
+| v1.0.14 | Per-feed `ConcurrentHashMap<Long, Mutex>` + MANUAL strategy cancels in-flight | 2026-05-16 |
+| v1.0.15 | Queue cursor uses snapshot index (not indexOfFirst); reorder resolves episode from old list | 2026-05-16 |
+| v1.0.16 | `downloadLimit = downloadCount` always; label clarity in Settings + FeedDetail | 2026-05-16 |
+| v1.0.17 | Split keepWindow/autoWindow — download chaining stops at downloadCount, not keepCount | 2026-05-16 |
+
+---
+
 ## Status
 
 | Group | Status | Items |
