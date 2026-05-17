@@ -36,16 +36,22 @@ interface QueueSnapshotDao {
     """)
     suspend fun getSnapshotItemsList(snapshotId: Long): List<QueueSnapshotItemEntity>
 
-    // Atomic snapshot replacement — deactivate all old snapshots, insert new one + items
+    // Atomic snapshot replacement — delete all old snapshots, insert new one + items
     @Transaction
     suspend fun replaceActiveSnapshot(
         snapshot: QueueSnapshotEntity,
         items: List<QueueSnapshotItemEntity>
     ) {
-        deactivateAllSnapshots()
+        // DELETE (not deactivate) — CASCADE removes all queue_snapshot_items automatically.
+        // Old deactivateAllSnapshots only set isActive=0, leaving thousands of orphan item rows.
+        deleteAllSnapshots()
         val newId = insertSnapshot(snapshot)
         insertItems(items.map { it.copy(snapshotId = newId) })
     }
+
+    /** Hard-delete all snapshots (CASCADE also removes all queue_snapshot_items). */
+    @Query("DELETE FROM queue_snapshots")
+    suspend fun deleteAllSnapshots()
 
     @Query("UPDATE queue_snapshots SET isActive = 0")
     suspend fun deactivateAllSnapshots()

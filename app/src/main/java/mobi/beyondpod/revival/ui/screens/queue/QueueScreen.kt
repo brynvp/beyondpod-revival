@@ -39,6 +39,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -130,75 +131,81 @@ fun QueueScreen(
                 }
 
                 is QueueUiState.Active -> {
-                    // Local mutable list drives drag-to-reorder UI without waiting for DB
-                    val localItems = remember(state.items) {
-                        state.items.toMutableStateList()
-                    }
+                    // key() forces Compose to recreate all remembered state (lazyListState,
+                    // reorderState, dismissState per item) when the snapshot is replaced.
+                    // Without this, stale SwipeToDismissBoxState from old item slots crashes
+                    // the layout phase when buildFeedQueueSnapshot replaces a 50-episode snapshot.
+                    key(state.snapshot.id) {
+                        // Local mutable list drives drag-to-reorder UI without waiting for DB
+                        val localItems = remember(state.items) {
+                            state.items.toMutableStateList()
+                        }
 
-                    val lazyListState = rememberLazyListState()
-                    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                        localItems.apply { add(to.index, removeAt(from.index)) }
-                        viewModel.reorderItems(localItems.toList())
-                    }
+                        val lazyListState = rememberLazyListState()
+                        val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+                            localItems.apply { add(to.index, removeAt(from.index)) }
+                            viewModel.reorderItems(localItems.toList())
+                        }
 
-                    LazyColumn(
-                        state = lazyListState,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(localItems, key = { it.snapshotItem.id }) { item ->
-                            ReorderableItem(reorderState, key = item.snapshotItem.id) { isDragging ->
-                                val elevation by animateDpAsState(
-                                    if (isDragging) 6.dp else 0.dp,
-                                    label = "drag_elevation"
-                                )
-                                val dismissState = rememberSwipeToDismissBoxState(
-                                    confirmValueChange = { value ->
-                                        if (value == SwipeToDismissBoxValue.EndToStart ||
-                                            value == SwipeToDismissBoxValue.StartToEnd
-                                        ) {
-                                            scope.launch {
-                                                val result = snackbarHostState.showSnackbar(
-                                                    message = "Removed from queue",
-                                                    actionLabel = null
-                                                )
-                                                if (result == SnackbarResult.Dismissed ||
-                                                    result == SnackbarResult.ActionPerformed
-                                                ) {
-                                                    viewModel.removeItem(item.snapshotItem.episodeId)
-                                                    localItems.remove(item)
-                                                }
-                                            }
-                                            true
-                                        } else false
-                                    }
-                                )
-
-                                SwipeToDismissBox(
-                                    state = dismissState,
-                                    backgroundContent = { /* tinted background */ },
-                                    modifier = Modifier.animateItem()
-                                ) {
-                                    Surface(shadowElevation = elevation) {
-                                        QueueItemRow(
-                                            item = item,
-                                            dragHandleModifier = Modifier.draggableHandle(),
-                                            onPlay = {
-                                                item.episode?.id?.let { id ->
-                                                    context.startService(
-                                                        PlaybackService.playEpisodeIntent(context, id)
+                        LazyColumn(
+                            state = lazyListState,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(localItems, key = { it.snapshotItem.id }) { item ->
+                                ReorderableItem(reorderState, key = item.snapshotItem.id) { isDragging ->
+                                    val elevation by animateDpAsState(
+                                        if (isDragging) 6.dp else 0.dp,
+                                        label = "drag_elevation"
+                                    )
+                                    val dismissState = rememberSwipeToDismissBoxState(
+                                        confirmValueChange = { value ->
+                                            if (value == SwipeToDismissBoxValue.EndToStart ||
+                                                value == SwipeToDismissBoxValue.StartToEnd
+                                            ) {
+                                                scope.launch {
+                                                    val result = snackbarHostState.showSnackbar(
+                                                        message = "Removed from queue",
+                                                        actionLabel = null
                                                     )
+                                                    if (result == SnackbarResult.Dismissed ||
+                                                        result == SnackbarResult.ActionPerformed
+                                                    ) {
+                                                        viewModel.removeItem(item.snapshotItem.episodeId)
+                                                        localItems.remove(item)
+                                                    }
                                                 }
-                                            }
-                                        )
+                                                true
+                                            } else false
+                                        }
+                                    )
+
+                                    SwipeToDismissBox(
+                                        state = dismissState,
+                                        backgroundContent = { /* tinted background */ },
+                                        modifier = Modifier.animateItem()
+                                    ) {
+                                        Surface(shadowElevation = elevation) {
+                                            QueueItemRow(
+                                                item = item,
+                                                dragHandleModifier = Modifier.draggableHandle(),
+                                                onPlay = {
+                                                    item.episode?.id?.let { id ->
+                                                        context.startService(
+                                                            PlaybackService.playEpisodeIntent(context, id)
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 76.dp),
+                                        thickness = 0.5.dp
+                                    )
                                 }
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(start = 76.dp),
-                                    thickness = 0.5.dp
-                                )
                             }
                         }
-                    }
+                    }   // end key(state.snapshot.id)
                 }
             }
         }
