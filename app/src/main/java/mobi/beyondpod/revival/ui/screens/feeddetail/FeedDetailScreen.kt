@@ -82,6 +82,7 @@ import mobi.beyondpod.revival.ui.navigation.Screen
 @Composable
 fun FeedDetailScreen(
     navController: NavController,
+    initialShowCategoryDialog: Boolean = false,
     viewModel: FeedDetailViewModel = hiltViewModel()
 ) {
     val uiState           by viewModel.uiState.collectAsState()
@@ -92,7 +93,7 @@ fun FeedDetailScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var showCategoryDialog by remember { mutableStateOf(false) }
+    var showCategoryDialog by remember { mutableStateOf(initialShowCategoryDialog) }
     var newCategoryName by remember { mutableStateOf("") }
 
     val predefinedCategories = listOf(

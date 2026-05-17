@@ -66,11 +66,12 @@ fun AddFeedScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    // Navigate to FeedDetailScreen once subscription is confirmed
+    // Navigate to FeedDetailScreen once subscription is confirmed.
+    // createRoutePickCategory opens the Assign Category dialog automatically on arrival.
     LaunchedEffect(uiState) {
         if (uiState is AddFeedUiState.Subscribed) {
             val feedId = (uiState as AddFeedUiState.Subscribed).feedId
-            navController.navigate(Screen.FeedEpisodes.createRoute(feedId)) {
+            navController.navigate(Screen.FeedEpisodes.createRoutePickCategory(feedId)) {
                 popUpTo(Screen.AddFeed.route) { inclusive = true }
             }
             viewModel.reset()
