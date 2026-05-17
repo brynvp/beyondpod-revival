@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Queue
 import androidx.compose.material.icons.filled.Settings
@@ -235,6 +236,17 @@ private fun BeyondPodDrawerContent(
             selected = currentRoute == Screen.Queue.route,
             onClick = {
                 navController.navigate(Screen.Queue.route)
+                onDestinationSelected()
+            }
+        )
+
+        // Smart Playlists
+        NavigationDrawerItem(
+            icon  = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = null) },
+            label = { Text("Smart Playlists") },
+            selected = currentRoute == Screen.SmartPlaylists.route,
+            onClick = {
+                navController.navigate(Screen.SmartPlaylists.route)
                 onDestinationSelected()
             }
         )

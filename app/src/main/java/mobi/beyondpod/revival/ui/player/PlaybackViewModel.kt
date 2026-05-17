@@ -307,6 +307,22 @@ class PlaybackViewModel @Inject constructor(
         _sleepTimerRemainingMs.value = 0L
     }
 
+    /**
+     * Stop playback completely and clear all player state.
+     * Sends ACTION_STOP_PLAYBACK to PlaybackService, which calls stopForeground + stopSelf.
+     * The MiniPlayer will slide out automatically once hasActiveEpisode → false.
+     */
+    fun stopPlayback() {
+        context.startService(
+            Intent(context, PlaybackService::class.java).apply {
+                action = PlaybackService.ACTION_STOP_PLAYBACK
+            }
+        )
+        // Cancel local sleep timer countdown if running — service is stopping anyway.
+        sleepTimerCountdownJob?.cancel()
+        _sleepTimerRemainingMs.value = 0L
+    }
+
     private fun startSleepCountdown(durationMs: Long) {
         sleepTimerCountdownJob?.cancel()
         val endTime = System.currentTimeMillis() + durationMs

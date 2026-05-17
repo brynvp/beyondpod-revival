@@ -18,11 +18,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,9 +46,10 @@ import mobi.beyondpod.revival.ui.theme.SurfaceVariantDark
  * Persistent mini-player bar docked above the navigation bar (§7.6).
  *
  * Visible only when an episode is loaded in [PlaybackService] (even if paused).
- * Shows: artwork (32dp), title, artist, play/pause, skip-forward.
- * Tap → navigates to full player (Phase 6).
+ * Shows: artwork (40dp), title, artist, play/pause, skip-forward.
+ * Tap → navigates to full player. Swipe left or right → stops playback and dismisses.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MiniPlayer(
     onTap: () -> Unit,
@@ -56,71 +62,94 @@ fun MiniPlayer(
     val artist           by viewModel.currentArtist.collectAsState()
     val artworkUri       by viewModel.artworkUri.collectAsState()
 
+    // Reset dismiss state whenever a new episode loads so a previously-dismissed
+    // swipe doesn't immediately re-dismiss the next episode's mini-player.
+    val dismissState = rememberSwipeToDismissBoxState()
+    LaunchedEffect(hasActiveEpisode) {
+        if (hasActiveEpisode) dismissState.reset()
+    }
+
+    // Stop playback when the user completes a swipe in either direction.
+    LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue != SwipeToDismissBoxValue.Settled) {
+            viewModel.stopPlayback()
+        }
+    }
+
     AnimatedVisibility(
         visible = hasActiveEpisode,
         enter = slideInVertically { it },
         exit  = slideOutVertically { it }
     ) {
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .background(SurfaceVariantDark)
-                .navigationBarsPadding()      // keeps content above gesture/button nav bar
-                .clickable { onTap() }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        SwipeToDismissBox(
+            state = dismissState,
+            // Allow swipe in both directions — either dismisses.
+            enableDismissFromStartToEnd = true,
+            enableDismissFromEndToStart = true,
+            // No background decoration needed — the bar just slides away.
+            backgroundContent = {}
         ) {
-            // Artwork (32dp)
-            if (artworkUri != null) {
-                AsyncImage(
-                    model = artworkUri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                )
-            }
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .background(SurfaceVariantDark)
+                    .navigationBarsPadding()
+                    .clickable { onTap() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Artwork (40dp)
+                if (artworkUri != null) {
+                    AsyncImage(
+                        model = artworkUri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                }
 
-            Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(12.dp))
 
-            // Title + artist — use OnSurfaceDark: background is always SurfaceVariantDark (near-black)
-            Column(modifier = Modifier.weight(1f), content = {
-                Text(
-                    text = title ?: "",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OnSurfaceDark,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (!artist.isNullOrBlank()) {
+                // Title + artist
+                Column(modifier = Modifier.weight(1f), content = {
                     Text(
-                        text = artist!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = OnSurfaceDark.copy(alpha = 0.65f),
+                        text = title ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OnSurfaceDark,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (!artist.isNullOrBlank()) {
+                        Text(
+                            text = artist!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnSurfaceDark.copy(alpha = 0.65f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                })
+
+                // Play / Pause
+                IconButton(onClick = { viewModel.togglePlayPause() }) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = OnSurfaceDark
+                    )
                 }
-            })
 
-            // Play / Pause
-            IconButton(onClick = { viewModel.togglePlayPause() }) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = OnSurfaceDark
-                )
-            }
-
-            // Skip forward (30s) — per original BP mini-player design
-            IconButton(onClick = { viewModel.fastForward() }) {
-                Icon(
-                    imageVector = Icons.Default.Forward30,
-                    contentDescription = "Fast forward",
-                    tint = OnSurfaceDark
-                )
+                // Skip forward (30s)
+                IconButton(onClick = { viewModel.fastForward() }) {
+                    Icon(
+                        imageVector = Icons.Default.Forward30,
+                        contentDescription = "Fast forward",
+                        tint = OnSurfaceDark
+                    )
+                }
             }
         }
     }
