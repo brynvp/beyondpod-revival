@@ -18,6 +18,15 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY isArchived ASC, pubDate DESC")
     suspend fun getEpisodesForFeedList(feedId: Long): List<EpisodeEntity>
 
+    /**
+     * All episodes for a feed ordered oldest-first (pubDate ASC).
+     * Used to build queue snapshots for feed-aware prev/next navigation:
+     * index 0 = oldest, index N = newest, so next=index+1 means "newer" and
+     * prev=index-1 means "older", matching chronological expectations.
+     */
+    @Query("SELECT * FROM episodes WHERE feedId = :feedId ORDER BY pubDate ASC")
+    suspend fun getEpisodesForFeedListAsc(feedId: Long): List<EpisodeEntity>
+
     @Query("""
         SELECT * FROM episodes
         WHERE feedId = :feedId AND playState != 'PLAYED'

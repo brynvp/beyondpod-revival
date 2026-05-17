@@ -34,7 +34,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
+import mobi.beyondpod.revival.data.local.dao.EpisodeDao
 import mobi.beyondpod.revival.data.local.dao.QueueSnapshotDao
+import mobi.beyondpod.revival.data.local.entity.QueueSnapshotEntity
+import mobi.beyondpod.revival.data.local.entity.QueueSnapshotItemEntity
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
 import mobi.beyondpod.revival.data.settings.AppSettings
@@ -62,6 +65,7 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var feedRepository: FeedRepository
     @Inject lateinit var dataStore: DataStore<Preferences>
     @Inject lateinit var queueSnapshotDao: QueueSnapshotDao
+    @Inject lateinit var episodeDao: EpisodeDao
 
     private lateinit var exoPlayer: ExoPlayer
     private var castPlayer: CastPlayer? = null
@@ -202,7 +206,17 @@ class PlaybackService : MediaSessionService() {
             ACTION_NEXT_EPISODE    -> serviceScope.launch { navigateNextEpisode() }
             ACTION_PLAY_EPISODE    -> {
                 val episodeId = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
-                if (episodeId >= 0) loadAndPlay(episodeId)
+                if (episodeId > 0) {
+                    serviceScope.launch {
+                        // Build a feed-ordered snapshot before playing so prev/next navigate
+                        // within this feed chronologically (older ← ⏮ playing ⏭ → newer).
+                        val episode = episodeRepository.getEpisodeById(episodeId)
+                        if (episode != null) {
+                            buildFeedQueueSnapshot(feedId = episode.feedId, startEpisodeId = episodeId)
+                        }
+                        loadAndPlay(episodeId)
+                    }
+                }
             }
             ACTION_STOP_PLAYBACK  -> {
                 // Called by FeedRepositoryImpl (G12) when unsubscribing a feed whose episode
@@ -448,6 +462,49 @@ class PlaybackService : MediaSessionService() {
     private val castSessionListener = object : SessionAvailabilityListener {
         override fun onCastSessionAvailable() { switchToCast() }
         override fun onCastSessionUnavailable() { switchToLocal() }
+    }
+
+    // ── Queue snapshot building ───────────────────────────────────────────────
+
+    /**
+     * Build a feed-ordered queue snapshot and position the cursor at [startEpisodeId].
+     *
+     * Episodes are ordered pubDate ASC (oldest = index 0, newest = index N) so that
+     * the existing next=index+1 / prev=index-1 navigation gives chronological movement:
+     *   ⏭ next → newer episode   ⏮ prev → older episode
+     *
+     * Called every time ACTION_PLAY_EPISODE is received so the snapshot always reflects
+     * the feed the user is currently browsing. Replaces any previously active snapshot.
+     *
+     * @param feedId        Feed whose episodes populate the snapshot.
+     * @param startEpisodeId Episode to position the cursor at (the one being played now).
+     */
+    private suspend fun buildFeedQueueSnapshot(feedId: Long, startEpisodeId: Long) {
+        val feedTitle = feedRepository.getFeedById(feedId)?.title ?: ""
+        val episodes  = episodeDao.getEpisodesForFeedListAsc(feedId)
+        if (episodes.isEmpty()) return
+
+        val items = episodes.mapIndexed { index, ep ->
+            QueueSnapshotItemEntity(
+                snapshotId            = 0L,   // assigned by replaceActiveSnapshot
+                episodeId             = ep.id,
+                position              = index,
+                episodeTitleSnapshot  = ep.title,
+                feedTitleSnapshot     = feedTitle,
+                episodeUrlSnapshot    = ep.url,
+                localFilePathSnapshot = ep.localFilePath
+            )
+        }
+
+        val startIndex = items.indexOfFirst { it.episodeId == startEpisodeId }
+            .coerceAtLeast(0)   // fallback to 0 if episode not found (shouldn't happen)
+
+        val snapshot = QueueSnapshotEntity(
+            isActive               = true,
+            currentItemIndex       = startIndex,
+            currentItemPositionMs  = 0L
+        )
+        queueSnapshotDao.replaceActiveSnapshot(snapshot, items)
     }
 
     // ── Queue navigation ──────────────────────────────────────────────────────
