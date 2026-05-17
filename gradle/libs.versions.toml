@@ -50,7 +50,7 @@ coroutines = "1.9.0"
 gson = "2.11.0"
 
 # Reorderable LazyList (sh.calvin.reorderable — used for drag-to-reorder in queue/playlists)
-reorderable = "2.1.1"
+reorderable = "2.4.0"
 
 # DocumentFile (SAF helper for virtual folder feeds)
 documentfile = "1.0.1"
