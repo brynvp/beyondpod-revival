@@ -30,6 +30,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,22 +65,24 @@ fun MiniPlayer(
     val artist           by viewModel.currentArtist.collectAsState()
     val artworkUri       by viewModel.artworkUri.collectAsState()
 
-    // Reset dismiss state whenever a new episode loads so a previously-dismissed
-    // swipe doesn't immediately re-dismiss the next episode's mini-player.
+    var dismissed by remember { mutableStateOf(false) }
     val dismissState = rememberSwipeToDismissBoxState()
-    LaunchedEffect(hasActiveEpisode) {
-        if (hasActiveEpisode) dismissState.reset()
-    }
 
-    // Stop playback when the user completes a swipe in either direction.
+    LaunchedEffect(hasActiveEpisode) {
+        if (hasActiveEpisode) {
+            dismissed = false        // reset for next episode
+            dismissState.reset()
+        }
+    }
     LaunchedEffect(dismissState.currentValue) {
         if (dismissState.currentValue != SwipeToDismissBoxValue.Settled) {
+            dismissed = true         // collapse space immediately — don't wait for service
             viewModel.stopPlayback()
         }
     }
 
     AnimatedVisibility(
-        visible = hasActiveEpisode,
+        visible = hasActiveEpisode && !dismissed,
         enter = slideInVertically { it },
         exit  = slideOutVertically { it }
     ) {
