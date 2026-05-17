@@ -67,13 +67,8 @@ fun BeyondPodNavGraph(
                     defaultValue = false
                 }
             )
-        ) { backStackEntry ->
-            val showCategoryPicker = backStackEntry.arguments
-                ?.getBoolean(Screen.FeedEpisodes.ARG_SHOW_CATEGORY_PICKER) ?: false
-            FeedDetailScreen(
-                navController = navController,
-                initialShowCategoryDialog = showCategoryPicker
-            )
+        ) {
+            FeedDetailScreen(navController = navController)
         }
 
         // ── Add feed [phase-5] ────────────────────────────────────────────────

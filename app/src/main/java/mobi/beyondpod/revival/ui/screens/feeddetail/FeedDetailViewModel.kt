@@ -64,6 +64,17 @@ class FeedDetailViewModel @Inject constructor(
 
     val feedId: Long = checkNotNull(savedStateHandle[Screen.FeedEpisodes.ARG_FEED_ID])
 
+    /**
+     * True when this screen was opened via "Subscribe" and should auto-show the
+     * Assign Category dialog on first composition.
+     *
+     * Read from SavedStateHandle — Navigation automatically populates this from the
+     * showCategoryPicker nav argument when hiltViewModel() resolves this ViewModel.
+     * Reading here (not in the composable) is the correct Navigation + Hilt pattern.
+     */
+    val showCategoryPickerOnLoad: Boolean =
+        savedStateHandle.get<Boolean>(Screen.FeedEpisodes.ARG_SHOW_CATEGORY_PICKER) ?: false
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
