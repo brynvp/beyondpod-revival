@@ -19,8 +19,10 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionResult
 import com.google.android.gms.cast.framework.CastContext
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -90,6 +92,76 @@ class PlaybackService : MediaSessionService() {
      * Kept so [switchToCast] can hand off to CastPlayer without re-querying the DB.
      */
     private var currentStreamUrl: String? = null
+
+    /**
+     * MediaSession.Callback that routes notification prev/next buttons to episode navigation.
+     *
+     * Problem: ExoPlayer only ever holds ONE MediaItem at a time (we call setMediaItem() for
+     * each episode). With a single item it does not advertise COMMAND_SEEK_TO_NEXT, so the ⏭
+     * notification button never appears. And COMMAND_SEEK_TO_PREVIOUS just seeks to the start
+     * of the current item — not what we want.
+     *
+     * Solution:
+     * - onConnect: force both SEEK_TO_PREVIOUS and SEEK_TO_NEXT into the available player
+     *   commands so both buttons always appear in the notification.
+     * - onPlayerCommandRequest: intercept those commands, launch our existing episode-navigation
+     *   coroutines, and return RESULT_ERROR_PERMISSION_DENIED so ExoPlayer's default single-item
+     *   seek behaviour is blocked.
+     *
+     * All other commands (play/pause, seek within episode, etc.) pass through unchanged.
+     */
+    @OptIn(UnstableApi::class)
+    private val episodeNavigationCallback = object : MediaSession.Callback {
+
+        /**
+         * Force SEEK_TO_NEXT and SEEK_TO_PREVIOUS into the available commands for every
+         * connected controller (notification, Android Auto, Bluetooth AVRCP, etc.).
+         *
+         * Without this, ExoPlayer's single-item playlist omits SEEK_TO_NEXT and the ⏭
+         * button never appears in the notification or on Bluetooth headsets.
+         */
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+                .buildUpon()
+                .add(Player.COMMAND_SEEK_TO_NEXT)
+                .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailablePlayerCommands(playerCommands)
+                .build()
+        }
+
+        /**
+         * Intercept prev/next player commands before they reach ExoPlayer.
+         *
+         * SEEK_TO_PREVIOUS → navigatePrevEpisode() (5s double-tap heuristic + queue walk)
+         * SEEK_TO_NEXT     → navigateNextEpisode() (walk queue forward; no-op at end)
+         *
+         * Returns RESULT_ERROR_PERMISSION_DENIED to block ExoPlayer's default single-item
+         * seek behaviour (seek-to-start / no-op). All other commands return RESULT_SUCCESS
+         * so normal play/pause and seek-within-episode work unchanged.
+         */
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            @Player.Command playerCommand: Int
+        ): Int = when (playerCommand) {
+            Player.COMMAND_SEEK_TO_PREVIOUS,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
+                serviceScope.launch { navigatePrevEpisode() }
+                SessionResult.RESULT_ERROR_PERMISSION_DENIED
+            }
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
+                serviceScope.launch { navigateNextEpisode() }
+                SessionResult.RESULT_ERROR_PERMISSION_DENIED
+            }
+            else -> SessionResult.RESULT_SUCCESS
+        }
+    }
 
     companion object {
         const val ACTION_SET_SLEEP_TIMER    = "mobi.beyondpod.revival.SET_SLEEP_TIMER"
@@ -178,6 +250,7 @@ class PlaybackService : MediaSessionService() {
 
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .apply { sessionActivity?.let { setSessionActivity(it) } }
+            .setCallback(episodeNavigationCallback)
             .build()
     }
 
