@@ -80,6 +80,10 @@ fun AddFeedScreen(
     val uiState by viewModel.uiState.collectAsState()
     val categories by viewModel.categories.collectAsState()
     var newCategoryName by remember { mutableStateOf("") }
+    // Local state drives the category dialog — mirrors the FeedDetailScreen pattern.
+    // Using local remember state (not StateFlow) guarantees an isolated recomposition
+    // that cannot be collapsed with other frame updates.
+    var pendingCategoryFeedId by remember { mutableStateOf<Long?>(null) }
 
     val predefinedCategories = listOf(
         "Science", "History", "Comedy", "Crime", "True Crime",
@@ -88,14 +92,21 @@ fun AddFeedScreen(
         "Arts", "Music", "Kids & Family", "Fiction", "Self-Improvement"
     )
 
-    // Navigate to FeedDetailScreen after category has been picked or skipped.
+    // Single LaunchedEffect handles both dialog trigger and navigation.
     LaunchedEffect(uiState) {
-        if (uiState is AddFeedUiState.Subscribed) {
-            val feedId = (uiState as AddFeedUiState.Subscribed).feedId
-            navController.navigate(Screen.FeedEpisodes.createRoute(feedId)) {
-                popUpTo(Screen.AddFeed.route) { inclusive = true }
+        when (val state = uiState) {
+            is AddFeedUiState.SubscribedPickCategory -> {
+                // Set local state — triggers isolated recomposition → dialog shown.
+                pendingCategoryFeedId = state.feedId
             }
-            viewModel.reset()
+            is AddFeedUiState.Subscribed -> {
+                pendingCategoryFeedId = null
+                navController.navigate(Screen.FeedEpisodes.createRoute(state.feedId)) {
+                    popUpTo(Screen.AddFeed.route) { inclusive = true }
+                }
+                viewModel.reset()
+            }
+            else -> { /* Idle / Loading / Preview / Error — no action */ }
         }
     }
 
@@ -251,9 +262,9 @@ fun AddFeedScreen(
         }
     }
 
-    // Category picker dialog — shown immediately after subscription is confirmed.
-    if (uiState is AddFeedUiState.SubscribedPickCategory) {
-        val feedId = (uiState as AddFeedUiState.SubscribedPickCategory).feedId
+    // Category picker dialog — driven by local state (not StateFlow) for reliable rendering.
+    if (pendingCategoryFeedId != null) {
+        val feedId = pendingCategoryFeedId!!
         val unusedSuggestions = predefinedCategories.filter { suggestion ->
             categories.none { it.name.equals(suggestion, ignoreCase = true) }
         }
