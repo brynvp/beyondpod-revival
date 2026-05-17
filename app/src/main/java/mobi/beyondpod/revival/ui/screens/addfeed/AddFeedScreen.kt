@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.util.Log
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,6 +78,7 @@ fun AddFeedScreen(
     navController: NavController,
     viewModel: AddFeedViewModel = hiltViewModel()
 ) {
+    val logTag = "BP.Subscribe"
     val uiState by viewModel.uiState.collectAsState()
     val categories by viewModel.categories.collectAsState()
     var newCategoryName by remember { mutableStateOf("") }
@@ -94,19 +96,24 @@ fun AddFeedScreen(
 
     // Single LaunchedEffect handles both dialog trigger and navigation.
     LaunchedEffect(uiState) {
+        Log.d(logTag, "LaunchedEffect uiState=${uiState::class.simpleName}")
         when (val state = uiState) {
             is AddFeedUiState.SubscribedPickCategory -> {
-                // Set local state — triggers isolated recomposition → dialog shown.
+                Log.d(logTag, "LaunchedEffect → setting pendingCategoryFeedId=${state.feedId}")
                 pendingCategoryFeedId = state.feedId
+                Log.d(logTag, "LaunchedEffect → pendingCategoryFeedId set, dialog should render")
             }
             is AddFeedUiState.Subscribed -> {
+                Log.d(logTag, "LaunchedEffect → navigating to feed ${state.feedId}")
                 pendingCategoryFeedId = null
                 navController.navigate(Screen.FeedEpisodes.createRoute(state.feedId)) {
                     popUpTo(Screen.AddFeed.route) { inclusive = true }
                 }
                 viewModel.reset()
             }
-            else -> { /* Idle / Loading / Preview / Error — no action */ }
+            else -> {
+                Log.d(logTag, "LaunchedEffect → no action for ${state::class.simpleName}")
+            }
         }
     }
 
@@ -263,7 +270,9 @@ fun AddFeedScreen(
     }
 
     // Category picker dialog — driven by local state (not StateFlow) for reliable rendering.
+    Log.d("BP.Subscribe", "Recompose: pendingCategoryFeedId=$pendingCategoryFeedId")
     if (pendingCategoryFeedId != null) {
+        Log.d("BP.Subscribe", "Rendering AlertDialog for feedId=$pendingCategoryFeedId")
         val feedId = pendingCategoryFeedId!!
         val unusedSuggestions = predefinedCategories.filter { suggestion ->
             categories.none { it.name.equals(suggestion, ignoreCase = true) }

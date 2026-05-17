@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import android.util.Log
 import kotlinx.coroutines.launch
 import mobi.beyondpod.revival.data.local.entity.CategoryEntity
 import mobi.beyondpod.revival.data.local.entity.FeedEntity
@@ -60,6 +61,10 @@ class AddFeedViewModel @Inject constructor(
     private val workManager: WorkManager
 ) : ViewModel() {
 
+    companion object {
+        private const val TAG = "BP.Subscribe"
+    }
+
     var urlInput by mutableStateOf("")
         private set
 
@@ -99,20 +104,25 @@ class AddFeedViewModel @Inject constructor(
     /** Confirm subscription — transitions to SubscribedPickCategory to show category dialog. */
     fun confirmSubscribe() {
         val state = _uiState.value as? AddFeedUiState.Preview ?: return
+        Log.d(TAG, "confirmSubscribe feedId=${state.feed.id} '${state.feed.title}'")
         _uiState.value = AddFeedUiState.SubscribedPickCategory(state.feed.id)
+        Log.d(TAG, "confirmSubscribe → emitted SubscribedPickCategory feedId=${state.feed.id}")
         enqueueImmediateRefresh(state.feed.id)
     }
 
     /** Skip category assignment — proceed straight to navigation. */
     fun skipCategory() {
         val feedId = (_uiState.value as? AddFeedUiState.SubscribedPickCategory)?.feedId ?: return
+        Log.d(TAG, "skipCategory feedId=$feedId → emitting Subscribed")
         _uiState.value = AddFeedUiState.Subscribed(feedId)
     }
 
     /** Assign an existing category, then proceed to navigation. */
     fun assignCategoryAndProceed(feedId: Long, categoryId: Long?) {
+        Log.d(TAG, "assignCategoryAndProceed feedId=$feedId categoryId=$categoryId")
         viewModelScope.launch {
             moveFeedToCategoryUseCase(feedId, categoryId)
+            Log.d(TAG, "assignCategoryAndProceed done → emitting Subscribed")
             _uiState.value = AddFeedUiState.Subscribed(feedId)
         }
     }
@@ -121,9 +131,11 @@ class AddFeedViewModel @Inject constructor(
     fun createCategoryAndProceed(feedId: Long, name: String) {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return
+        Log.d(TAG, "createCategoryAndProceed feedId=$feedId name='$trimmed'")
         viewModelScope.launch {
             val newId = createCategoryUseCase(CategoryEntity(name = trimmed))
             moveFeedToCategoryUseCase(feedId, newId)
+            Log.d(TAG, "createCategoryAndProceed done newCategoryId=$newId → emitting Subscribed")
             _uiState.value = AddFeedUiState.Subscribed(feedId)
         }
     }
