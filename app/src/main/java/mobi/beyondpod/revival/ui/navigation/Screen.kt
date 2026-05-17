@@ -11,13 +11,9 @@ sealed class Screen(val route: String) {
     data object SmartPlaylists      : Screen("smart_playlists")
     data object Queue               : Screen("queue")
 
-    data object FeedEpisodes : Screen("feed_episodes/{feedId}?showCategoryPicker={showCategoryPicker}") {
-        /** Normal navigation — category picker stays closed. */
+    data object FeedEpisodes : Screen("feed_episodes/{feedId}") {
         fun createRoute(feedId: Long) = "feed_episodes/$feedId"
-        /** Navigate and auto-open the Assign Category dialog on arrival. */
-        fun createRoutePickCategory(feedId: Long) = "feed_episodes/$feedId?showCategoryPicker=true"
         const val ARG_FEED_ID = "feedId"
-        const val ARG_SHOW_CATEGORY_PICKER = "showCategoryPicker"
     }
 
     data object Playlist : Screen("playlist/{playlistId}") {

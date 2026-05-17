@@ -92,7 +92,7 @@ fun FeedDetailScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var showCategoryDialog by remember { mutableStateOf(viewModel.showCategoryPickerOnLoad) }
+    var showCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
 
     val predefinedCategories = listOf(

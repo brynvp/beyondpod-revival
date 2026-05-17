@@ -58,15 +58,9 @@ fun BeyondPodNavGraph(
         // ── Feed detail — episodes + settings for one feed [phase-5] ─────────
         composable(
             route = Screen.FeedEpisodes.route,
-            arguments = listOf(
-                navArgument(Screen.FeedEpisodes.ARG_FEED_ID) {
-                    type = NavType.LongType
-                },
-                navArgument(Screen.FeedEpisodes.ARG_SHOW_CATEGORY_PICKER) {
-                    type = NavType.BoolType
-                    defaultValue = false
-                }
-            )
+            arguments = listOf(navArgument(Screen.FeedEpisodes.ARG_FEED_ID) {
+                type = NavType.LongType
+            })
         ) {
             FeedDetailScreen(navController = navController)
         }
