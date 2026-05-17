@@ -26,6 +26,7 @@ import mobi.beyondpod.revival.data.repository.FeedRepository
 import mobi.beyondpod.revival.data.repository.DownloadRepository
 import mobi.beyondpod.revival.domain.usecase.download.EnqueueDownloadUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.DeleteFeedUseCase
+import mobi.beyondpod.revival.domain.usecase.category.CreateCategoryUseCase
 import mobi.beyondpod.revival.domain.usecase.feed.MoveFeedToCategoryUseCase
 import mobi.beyondpod.revival.service.FeedUpdateWorker
 import mobi.beyondpod.revival.ui.navigation.Screen
@@ -57,6 +58,7 @@ class FeedDetailViewModel @Inject constructor(
     private val deleteFeedUseCase: DeleteFeedUseCase,
     private val enqueueDownloadUseCase: EnqueueDownloadUseCase,
     private val moveFeedToCategoryUseCase: MoveFeedToCategoryUseCase,
+    private val createCategoryUseCase: CreateCategoryUseCase,
     private val workManager: WorkManager
 ) : ViewModel() {
 
@@ -184,6 +186,19 @@ class FeedDetailViewModel @Inject constructor(
     fun assignCategory(categoryId: Long?) {
         viewModelScope.launch {
             moveFeedToCategoryUseCase(feedId, categoryId)
+        }
+    }
+
+    /**
+     * Create a new category with [name] and immediately assign this feed to it.
+     * No-ops silently if [name] is blank (UI button is disabled, but guard defensively).
+     */
+    fun createAndAssignCategory(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            val newId = createCategoryUseCase(CategoryEntity(name = trimmed))
+            moveFeedToCategoryUseCase(feedId, newId)
         }
     }
 

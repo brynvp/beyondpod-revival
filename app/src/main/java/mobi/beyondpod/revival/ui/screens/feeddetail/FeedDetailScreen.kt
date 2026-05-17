@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,8 +25,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.platform.LocalContext
 import mobi.beyondpod.revival.service.PlaybackService
@@ -89,6 +93,14 @@ fun FeedDetailScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
+
+    val predefinedCategories = listOf(
+        "Science", "History", "Comedy", "Crime", "True Crime",
+        "Technology", "Business", "News", "Sports", "Entertainment",
+        "Society & Culture", "Health", "Education", "Politics",
+        "Arts", "Music", "Kids & Family", "Fiction", "Self-Improvement"
+    )
 
     Scaffold(
         topBar = {
@@ -193,53 +205,120 @@ fun FeedDetailScreen(
     // Assign Category dialog
     if (showCategoryDialog) {
         val currentCategoryId = (uiState as? FeedDetailUiState.Success)?.feed?.primaryCategoryId
+        // Suggestions: predefined names not yet created by the user
+        val unusedSuggestions = predefinedCategories.filter { suggestion ->
+            categories.none { it.name.equals(suggestion, ignoreCase = true) }
+        }
         AlertDialog(
-            onDismissRequest = { showCategoryDialog = false },
+            onDismissRequest = {
+                showCategoryDialog = false
+                newCategoryName = ""
+            },
             title = { Text("Assign Category") },
             text = {
-                LazyColumn {
-                    // "Uncategorized" option
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = currentCategoryId == null,
-                                onClick = {
-                                    viewModel.assignCategory(null)
-                                    showCategoryDialog = false
-                                }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("Uncategorized")
+                Column {
+                    // ── Existing categories ──────────────────────────────────
+                    LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = currentCategoryId == null,
+                                    onClick = {
+                                        viewModel.assignCategory(null)
+                                        showCategoryDialog = false
+                                        newCategoryName = ""
+                                    }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Uncategorized")
+                            }
+                        }
+                        items(items = categories, key = { it.id }) { category ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = currentCategoryId == category.id,
+                                    onClick = {
+                                        viewModel.assignCategory(category.id)
+                                        showCategoryDialog = false
+                                        newCategoryName = ""
+                                    }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(category.name)
+                            }
                         }
                     }
-                    items(items = categories, key = { it.id }) { category ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+
+                    // ── Create new category ──────────────────────────────────
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text(
+                        text = "Create new",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+
+                    // Predefined suggestions (chips) — only names not yet created
+                    if (unusedSuggestions.isNotEmpty()) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(bottom = 8.dp)
                         ) {
-                            RadioButton(
-                                selected = currentCategoryId == category.id,
-                                onClick = {
-                                    viewModel.assignCategory(category.id)
-                                    showCategoryDialog = false
-                                }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(category.name)
+                            items(unusedSuggestions.size) { index ->
+                                SuggestionChip(
+                                    onClick = {
+                                        viewModel.createAndAssignCategory(unusedSuggestions[index])
+                                        showCategoryDialog = false
+                                        newCategoryName = ""
+                                    },
+                                    label = { Text(unusedSuggestions[index]) }
+                                )
+                            }
+                        }
+                    }
+
+                    // Custom name text field + Add button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = newCategoryName,
+                            onValueChange = { newCategoryName = it },
+                            label = { Text("Custom name") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(
+                            onClick = {
+                                viewModel.createAndAssignCategory(newCategoryName)
+                                showCategoryDialog = false
+                                newCategoryName = ""
+                            },
+                            enabled = newCategoryName.isNotBlank()
+                        ) {
+                            Text("Add")
                         }
                     }
                 }
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showCategoryDialog = false }) { Text("Cancel") }
+                TextButton(onClick = {
+                    showCategoryDialog = false
+                    newCategoryName = ""
+                }) { Text("Cancel") }
             }
         )
     }
