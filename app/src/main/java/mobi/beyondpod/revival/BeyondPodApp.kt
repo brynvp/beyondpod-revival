@@ -11,6 +11,10 @@ import coil3.memory.MemoryCache
 import okio.Path.Companion.toOkioPath
 import coil3.request.crossfade
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import mobi.beyondpod.revival.data.repository.PlaylistRepository
 import mobi.beyondpod.revival.service.PlaybackNotificationManager
 import javax.inject.Inject
 
@@ -26,6 +30,7 @@ class BeyondPodApp : Application(), Configuration.Provider, SingletonImageLoader
 
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var notificationManager: PlaybackNotificationManager
+    @Inject lateinit var playlistRepository: PlaylistRepository
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -35,6 +40,10 @@ class BeyondPodApp : Application(), Configuration.Provider, SingletonImageLoader
     override fun onCreate() {
         super.onCreate()
         notificationManager.createNotificationChannels()
+        // Ensure default Smart Playlists exist — idempotent, safe to call every launch.
+        CoroutineScope(Dispatchers.IO).launch {
+            playlistRepository.seedDefaultPlaylistsIfNeeded()
+        }
     }
 
     /**

@@ -91,6 +91,10 @@ interface EpisodeDao {
     @Query("UPDATE episodes SET isInMyEpisodes = 0, addedToMyEpisodes = NULL WHERE isInMyEpisodes = 1")
     suspend fun clearAllMyEpisodesFlags()
 
+    /** Live list of My Episodes in the order they were added (oldest add first). */
+    @Query("SELECT * FROM episodes WHERE isInMyEpisodes = 1 ORDER BY addedToMyEpisodes ASC")
+    fun getMyEpisodesOrdered(): Flow<List<EpisodeEntity>>
+
     // NOTE: No updateQueueState() or isInQueue/queuePosition operations here.
     // All queue read/write goes through QueueSnapshotDao. (QA finding #1.)
 

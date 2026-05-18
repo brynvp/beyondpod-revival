@@ -66,12 +66,8 @@ class EpisodeRepositoryImpl @Inject constructor(
 
     // ── My Episodes ───────────────────────────────────────────────────────────
 
-    override fun getMyEpisodes(): Flow<List<EpisodeEntity>> {
-        // Returns episodes ordered by their position in ManualPlaylistEpisodeCrossRef.
-        // Falls back to the queue join query which already handles ordering via snapshot.
-        // For a proper implementation, a dedicated query joining manual_playlist_episodes is used.
-        return episodeDao.getQueuedEpisodes()  // Phase 4 will wire the My Episodes-specific query
-    }
+    override fun getMyEpisodes(): Flow<List<EpisodeEntity>> =
+        episodeDao.getMyEpisodesOrdered()
 
     override suspend fun addToMyEpisodes(episodeId: Long) {
         val playlistId = myEpisodesPlaylistId() ?: return

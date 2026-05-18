@@ -20,6 +20,7 @@ import mobi.beyondpod.revival.data.local.entity.EpisodeEntity
 import mobi.beyondpod.revival.data.repository.EpisodeRepository
 import mobi.beyondpod.revival.data.repository.FeedRepository
 import mobi.beyondpod.revival.domain.usecase.download.EnqueueDownloadUseCase
+import mobi.beyondpod.revival.domain.usecase.episode.GetMyEpisodesUseCase
 import mobi.beyondpod.revival.service.FeedUpdateWorker
 import javax.inject.Inject
 
@@ -33,6 +34,7 @@ sealed interface MyEpisodesUiState {
 class MyEpisodesViewModel @Inject constructor(
     private val episodeRepository: EpisodeRepository,
     private val feedRepository: FeedRepository,
+    private val getMyEpisodesUseCase: GetMyEpisodesUseCase,
     private val enqueueDownloadUseCase: EnqueueDownloadUseCase,
     private val workManager: WorkManager
 ) : ViewModel() {
@@ -41,7 +43,7 @@ class MyEpisodesViewModel @Inject constructor(
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     // "What to Play" — DOWNLOADED episodes only, newest pubDate first
-    val uiState: StateFlow<MyEpisodesUiState> = episodeRepository.getLatestDownloads(50)
+    val uiState: StateFlow<MyEpisodesUiState> = getMyEpisodesUseCase()
         .map { episodes -> MyEpisodesUiState.Success(episodes) }
         .stateIn(
             scope = viewModelScope,
