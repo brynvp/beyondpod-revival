@@ -89,6 +89,7 @@ class DownloadCompleteReceiver : BroadcastReceiver() {
                         file.absolutePath,
                         file.length()
                     )
+                    episodeDao.updateIsInMyEpisodes(episode.id, true, System.currentTimeMillis())
                     // Chain: immediately queue the next episode for this feed.
                     // WorkManager is deferred during Doze, so without this the download
                     // queue stalls when the screen is locked. ACTION_DOWNLOAD_COMPLETE is

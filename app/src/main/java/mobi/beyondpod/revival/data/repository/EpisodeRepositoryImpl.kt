@@ -86,6 +86,10 @@ class EpisodeRepositoryImpl @Inject constructor(
         episodeDao.updateIsInMyEpisodes(episodeId, false, null)
     }
 
+    override suspend fun backfillDownloadedToMyEpisodes() {
+        episodeDao.backfillDownloadedEpisodesToMyEpisodes(System.currentTimeMillis())
+    }
+
     override suspend fun reorderMyEpisodes(orderedEpisodeIds: List<Long>) {
         val playlistId = myEpisodesPlaylistId() ?: return
         orderedEpisodeIds.forEachIndexed { index, episodeId ->

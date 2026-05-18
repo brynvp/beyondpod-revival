@@ -95,6 +95,15 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE isInMyEpisodes = 1 ORDER BY addedToMyEpisodes ASC")
     fun getMyEpisodesOrdered(): Flow<List<EpisodeEntity>>
 
+    /** One-time backfill — marks all currently DOWNLOADED episodes as isInMyEpisodes. */
+    @Query("""
+        UPDATE episodes
+        SET isInMyEpisodes = 1, addedToMyEpisodes = :timestamp
+        WHERE downloadState = 'DOWNLOADED'
+          AND isInMyEpisodes = 0
+    """)
+    suspend fun backfillDownloadedEpisodesToMyEpisodes(timestamp: Long)
+
     // NOTE: No updateQueueState() or isInQueue/queuePosition operations here.
     // All queue read/write goes through QueueSnapshotDao. (QA finding #1.)
 

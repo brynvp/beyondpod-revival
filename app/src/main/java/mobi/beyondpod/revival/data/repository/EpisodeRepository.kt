@@ -35,6 +35,7 @@ interface EpisodeRepository {
 
     suspend fun addToMyEpisodes(episodeId: Long)
     suspend fun removeFromMyEpisodes(episodeId: Long)
+    suspend fun backfillDownloadedToMyEpisodes()
 
     /**
      * Reorder My Episodes. [orderedEpisodeIds] is the new desired order (all IDs must
