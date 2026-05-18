@@ -451,9 +451,37 @@ private fun BlockRow(
             selected = block.source,
             options = BlockSource.entries,
             display = { it.toDisplay() },
-            onSelect = { onUpdate(block.copy(source = it)) }
+            onSelect = {
+                // Clear sourceId when switching back to ALL_FEEDS.
+                onUpdate(block.copy(source = it, sourceId = if (it == BlockSource.ALL_FEEDS) null else block.sourceId))
+            }
         )
         Spacer(Modifier.height(4.dp))
+
+        // sourceId field — only shown when source is FEED or CATEGORY
+        if (block.source != BlockSource.ALL_FEEDS) {
+            val idLabel = if (block.source == BlockSource.FEED) "Feed ID" else "Category ID"
+            val idHint  = if (block.source == BlockSource.FEED)
+                "Tap ⋮ on any feed → copy its numeric ID from the URL or log"
+            else
+                "Tap ⋮ on a category to find its ID"
+            OutlinedTextField(
+                value = block.sourceId?.toString() ?: "",
+                onValueChange = { v ->
+                    onUpdate(block.copy(sourceId = v.toLongOrNull()))
+                },
+                label = { Text(idLabel) },
+                placeholder = { Text("Numeric ID") },
+                supportingText = { Text(idHint, style = MaterialTheme.typography.labelSmall) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = block.source != BlockSource.ALL_FEEDS && block.sourceId == null,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                )
+            )
+            Spacer(Modifier.height(4.dp))
+        }
 
         // Order picker
         EnumDropdown(
